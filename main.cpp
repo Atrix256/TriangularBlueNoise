@@ -59,6 +59,18 @@ int main(int argc, char** argv)
         stbi_write_png("out_gradient_white.png", c_gradientWidth, c_gradientHeight, 1, gradient.data(), 0);
     }
 
+    {
+        std::vector<unsigned char> gradient(c_gradientWidth*c_gradientHeight);
+        for (size_t iy = 0; iy < c_gradientHeight; ++iy)
+            for (size_t ix = 0; ix < c_gradientWidth; ++ix)
+            {
+                float randValue = (dist(rng) + dist(rng)) / 2.0f;
+                gradient[iy*c_gradientWidth + ix] = (GradientValue(ix, iy) > randValue) ? 255 : 0;
+            }
+
+        stbi_write_png("out_gradient_white_triangle.png", c_gradientWidth, c_gradientHeight, 1, gradient.data(), 0);
+    }
+
     return 0;
 }
 
@@ -69,6 +81,10 @@ TODO:
 * find "inside" that talks about triangular distributed noise
  * page 54 here. there's a link to a paper too. https://www.gdcvault.com/play/1023002/Low-Complexity-High-Fidelity-INSIDE
  * paper: https://uwspace.uwaterloo.ca/bitstream/handle/10012/3867/thesis.pdf;jsessionid=74681FAF2CA22E754C673E9A1E6957EC?sequence=1
+
+* make a deterministic seed (a #define for it) so the images don't keep changing
+
+* show the "diff"/error image of noise vs gradient that shows banding or whatever
 
 - white noise dither a gradient.
 - blue noise dither a gradient.
