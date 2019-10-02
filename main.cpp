@@ -136,7 +136,7 @@ void DoTest(const char* fileName, const std::vector<float>& gradient, const LAMB
         for (size_t ix = 0; ix < c_gradientWidth; ++ix)
         {
             float normalizedHistogramValue = 1.0f - float(histogram[ix]) / float(maxHistogramValue);
-            size_t height = Clamp<size_t>(size_t(normalizedHistogramValue * (c_gradientHeight - 1) + 0.5), 0, c_gradientHeight-1); // TODO: pad from top?
+            size_t height = Clamp<size_t>(size_t(normalizedHistogramValue * (c_gradientHeight - 1) + 0.5), 0, c_gradientHeight-1);
             gradientHistogram[iy*c_gradientWidth + ix] = (iy < height) ? 1.0f : 0.0f;
         }
     }
@@ -202,11 +202,7 @@ int main(int argc, char** argv)
     // TODO: try working through inverting the CDF for triangle distribution
 
     // TODO: apparently the -0.5 to +1.5 is useful for dithering?? understand that!
-    // TODO: need to dither in linear space, so need to work in floats!
-    // TODO: show an image for error, and another for histogram.
-    // TODO: test multiple quantizations? not just 1 bit? i think thats where the triangular noise helps
-    // TODO: inside used triangle noise that went outside 0 to 1. is that important?
-    // TODO: try making triangle noise by inverting cdf.
+    // TODO: test multiple quantizations? not just 1 bit? i think thats where the triangular noise helps maybe
 
     return 0;
 }
@@ -215,30 +211,21 @@ int main(int argc, char** argv)
 /*
 
 TODO:
-* find "inside" that talks about triangular distributed noise
- * page 54 here. there's a link to a paper too. https://www.gdcvault.com/play/1023002/Low-Complexity-High-Fidelity-INSIDE
- * paper: https://uwspace.uwaterloo.ca/bitstream/handle/10012/3867/thesis.pdf;jsessionid=74681FAF2CA22E754C673E9A1E6957EC?sequence=1
 
-
-- white noise dither a gradient.
-- blue noise dither a gradient.
+- blue noise dither a gradient using void and cluster generated noise. Load the texture!
 - triangular white/blue noise a gradient (how to get triangular blue noise? maybe just white first?)
 
-- Triangular blue noise constructions:
-1) make blue noise with void and cluster, and inverse CDF the values.
-2) try averaging 2 blue noise textures
-3) try subtracting 0.5, squaring (or similar) and adding 0.5 back in.
-
-- histogram of noise
-- DFT of noise
-
-- threshold tests of blue noise along with histogram and DFT
+- DFT of noise? or is linking to previous post enough
+- threshold tests of blue noise along with histogram and DFT?
 
 
 
 Notes:
 * working in float because we need to dither in linear color space.
-
+* find "inside" that talks about triangular distributed noise
+ * page 54 here. there's a link to a paper too. https://www.gdcvault.com/play/1023002/Low-Complexity-High-Fidelity-INSIDE
+ * paper: https://uwspace.uwaterloo.ca/bitstream/handle/10012/3867/thesis.pdf;jsessionid=74681FAF2CA22E754C673E9A1E6957EC?sequence=1
+* link to last blog post about noise color being independent of distribution?
 
 Future:
 ! DFT circle by packing hexagons?
