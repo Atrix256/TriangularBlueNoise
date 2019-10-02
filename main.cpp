@@ -99,6 +99,14 @@ void SaveImage(const char* fileName, const std::vector<float>& image, size_t wid
     stbi_write_png(fileName, int(width), int(height), 1, outImage.data(), 0);
 }
 
+float Quantize(float value, float randValue, size_t quantizationLevels)
+{
+    float ret = value * float(quantizationLevels);
+    ret = floor(ret + randValue);
+    ret /= float(quantizationLevels);
+    return Clamp(ret, 0.0f, float(quantizationLevels - 1));
+}
+
 template <typename LAMBDA>
 void DoTest(const char* fileName, const std::vector<float>& gradient, const LAMBDA& lambda)
 {
@@ -107,6 +115,8 @@ void DoTest(const char* fileName, const std::vector<float>& gradient, const LAMB
     std::vector<float> gradientHistogram(c_gradientWidth*c_gradientHeight);
     std::vector<uint32> histogram(c_gradientWidth, 0);
 
+    size_t quantizationLevels = 2;
+
     for (size_t iy = 0; iy < c_gradientHeight; ++iy)
     {
         for (size_t ix = 0; ix < c_gradientWidth; ++ix)
@@ -114,11 +124,12 @@ void DoTest(const char* fileName, const std::vector<float>& gradient, const LAMB
             // get random value
             float randValue = lambda(ix, iy);
 
-            // dither
-            gradientDithered[iy*c_gradientWidth + ix] = (gradient[iy*c_gradientWidth + ix] > randValue) ? 1.0f : 0.0f;
+            // dither and quantize
+            float ditheredValue = Quantize(gradient[iy*c_gradientWidth + ix], randValue, quantizationLevels);
+            gradientDithered[iy*c_gradientWidth + ix] = ditheredValue;
 
             // error image
-            gradientError[iy*c_gradientWidth + ix] = std::abs(gradient[iy*c_gradientWidth + ix] - randValue);
+            gradientError[iy*c_gradientWidth + ix] = std::abs(gradient[iy*c_gradientWidth + ix] - ditheredValue);
 
             // histogram
             size_t histogramBucket = Clamp<size_t>(size_t(randValue * (c_gradientWidth - 1) + 0.5f), 0, c_gradientWidth - 1);
@@ -154,8 +165,8 @@ float ReshapeUniformToTriangle(float rnd)
     float orig = rnd * 2.0f - 1.0f;
     rnd = std::max(-1.0f, orig * 1.0f / sqrt(abs(orig)));
     rnd = rnd - sign(orig) + 0.5f;
-
-    return (rnd + 0.5f) * 0.5f; // TODO: make it go from -0.5 to +1.5, TO 0 to 1. For histogram, dithering wants the full value though
+    return rnd;
+    //return (rnd + 0.5f) * 0.5f; // TODO: make it go from -0.5 to +1.5, TO 0 to 1. For histogram, dithering wants the full value though
 }
 
 int main(int argc, char** argv)
@@ -168,8 +179,22 @@ int main(int argc, char** argv)
                 gradient[iy*c_gradientWidth + ix] = float(ix) / float(c_gradientWidth - 1);
     }
 
+    // naked quantization tests
+    DoTest("out_none.png", gradient,
+        [](size_t ix, size_t iy)
+        {
+            return 0.0f;
+        }
+    );
+    DoTest("out_none_round.png", gradient,
+        [](size_t ix, size_t iy)
+        {
+            return 0.5f;
+        }
+    );
+
     // uniform white noise test
-    DoTest("out_gradient_white_uniform.png", gradient,
+    DoTest("out_white_uniform.png", gradient,
         [] (size_t ix, size_t iy)
         {
             static std::mt19937 rng(GetRNGSeed());
@@ -178,18 +203,18 @@ int main(int argc, char** argv)
         }
     );
 
-    // triangular white noise test, made by averaging two white noise values
-    DoTest("out_gradient_white_triangle_avg.png", gradient,
+    // triangular white noise test, made by combining two white noise values
+    DoTest("out_white_triangle_combine.png", gradient,
         [] (size_t ix, size_t iy)
         {
             static std::mt19937 rng(GetRNGSeed());
             static std::uniform_real_distribution<float> dist;
-            return (dist(rng) + dist(rng)) / 2;
+            return dist(rng) + dist(rng) - 0.5f;
         }
     );
 
     // triangular white noise test, made by reshaping a single white noise value
-    DoTest("out_gradient_white_triangle_reshape.png", gradient,
+    DoTest("out_white_triangle_reshape.png", gradient,
         [] (size_t ix, size_t iy)
         {
             static std::mt19937 rng(GetRNGSeed());
@@ -205,7 +230,7 @@ int main(int argc, char** argv)
         uint8* bnb = stbi_load("BlueNoise64_B.png", &w, &h, &c, 4);
 
         // uniform blue noise test
-        DoTest("out_gradient_blue_uniform.png", gradient,
+        DoTest("out_blue_uniform.png", gradient,
             [=] (size_t ix, size_t iy)
             {
                 ix = ix % w;
@@ -214,20 +239,20 @@ int main(int argc, char** argv)
             }
         );
 
-        // triangular blue noise test, made by averaging two blue noise values
-        DoTest("out_gradient_blue_avg.png", gradient,
+        // triangular blue noise test, made by combining two blue noise values
+        DoTest("out_blue_triangle_combine.png", gradient,
             [=] (size_t ix, size_t iy)
             {
                 ix = ix % w;
                 iy = iy % h;
                 float valueA = float(bna[(iy*w + ix) * 4]) / 255.0f;
                 float valueB = float(bnb[(iy*w + ix) * 4]) / 255.0f;
-                return (valueA + valueB) / 2.0f;
+                return valueA + valueB - 0.5f;
             }
         );
 
         // triangular blue noise test, made by reshaping a single blue noise value
-        DoTest("out_gradient_blue_triangle_reshape.png", gradient,
+        DoTest("out_blue_triangle_reshape.png", gradient,
             [=](size_t ix, size_t iy)
             {
                 ix = ix % w;
