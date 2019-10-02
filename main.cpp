@@ -150,9 +150,6 @@ void DoTest(const char* fileName, const std::vector<float>& gradient, const LAMB
 
 int main(int argc, char** argv)
 {
-    // init random number generator
-    std::mt19937 rng(GetRNGSeed());
-
     // make the (linear) gradient image
     std::vector<float> gradient(c_gradientWidth*c_gradientHeight);
     {
@@ -163,8 +160,9 @@ int main(int argc, char** argv)
 
     // uniform white noise test
     DoTest("out_gradient_white_uniform.png", gradient,
-        [&rng] (size_t ix, size_t iy)
+        [] (size_t ix, size_t iy)
         {
+            static std::mt19937 rng(GetRNGSeed());
             static std::uniform_real_distribution<float> dist;
             return dist(rng);
         }
@@ -172,8 +170,9 @@ int main(int argc, char** argv)
 
     // triangular white noise test, made by averaging two white noise values
     DoTest("out_gradient_white_triangle_avg.png", gradient,
-        [&rng] (size_t ix, size_t iy)
+        [] (size_t ix, size_t iy)
         {
+            static std::mt19937 rng(GetRNGSeed());
             static std::uniform_real_distribution<float> dist;
             return (dist(rng) + dist(rng)) / 2;
         }
@@ -182,8 +181,9 @@ int main(int argc, char** argv)
     // triangular white noise test, made by reshaping a single white noise value
     // https://www.shadertoy.com/view/4t2SDh
     DoTest("out_gradient_white_triangle_reshape.png", gradient,
-        [&rng] (size_t ix, size_t iy)
+        [] (size_t ix, size_t iy)
         {
+            static std::mt19937 rng(GetRNGSeed());
             static std::uniform_real_distribution<float> dist;
             float nrnd0 = dist(rng);
 
