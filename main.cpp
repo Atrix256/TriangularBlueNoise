@@ -204,6 +204,8 @@ int main(int argc, char** argv)
     // TODO: apparently the -0.5 to +1.5 is useful for dithering?? understand that!
     // TODO: test multiple quantizations? not just 1 bit? i think thats where the triangular noise helps maybe
 
+    // TODO: if adding 2 white noise together, does it hurt the DFT? maybe do a DFT of dither pattern and see?
+
     return 0;
 }
 
