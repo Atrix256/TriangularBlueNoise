@@ -266,10 +266,7 @@ int main(int argc, char** argv)
 
 TODO:
 
-- blue noise dither a gradient using void and cluster generated noise. Load the texture!
-- triangular white/blue noise a gradient (how to get triangular blue noise? maybe just white first?)
-
-- DFT of noise? or is linking to previous post enough
+- DFT of noise? or is linking to previous post enough. actually it would be nice to see frequencies i guess.
 - threshold tests of blue noise along with histogram and DFT?
 
 
@@ -280,6 +277,7 @@ Notes:
  * page 54 here. there's a link to a paper too. https://www.gdcvault.com/play/1023002/Low-Complexity-High-Fidelity-INSIDE
  * paper: https://uwspace.uwaterloo.ca/bitstream/handle/10012/3867/thesis.pdf;jsessionid=74681FAF2CA22E754C673E9A1E6957EC?sequence=1
 * link to last blog post about noise color being independent of distribution?
+* "The error resulting from a triangularly distributed noise is independent of the signal."
 
 Future:
 ! DFT circle by packing hexagons?
