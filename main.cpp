@@ -16,8 +16,8 @@ typedef uint32_t uint32;
 #define DETERMINISTIC() true  // if true, will use the seed below for everything, else will randomly generate a seed.
 #define DETERMINISTIC_SEED() unsigned(783104853), unsigned(4213684301), unsigned(3526061164), unsigned(614346169), unsigned(478811579), unsigned(2044310268), unsigned(3671768129), unsigned(206439072)
 
-static const size_t c_gradientWidth = 256;
-static const size_t c_gradientHeight = 32;
+static const size_t c_gradientWidth = 512;
+static const size_t c_gradientHeight = 64;
 
 
 
@@ -91,12 +91,25 @@ void SaveImage(const char* fileName, const std::vector<float>& image, size_t wid
 {
     std::vector<uint8> outImage(image.size());
     for (size_t index = 0; index < image.size(); ++index)
-    {
-        float sRGB = linear_to_srgb_float(image[index]);
-        outImage[index] = uint8(Clamp(sRGB * 255.0f + 0.5f, 0.0f, 255.0f));
-    }
+        outImage[index] = uint8(Clamp(image[index] * 255.0f + 0.5f, 0.0f, 255.0f));
 
     stbi_write_png(fileName, int(width), int(height), 1, outImage.data(), 0);
+}
+
+std::vector<float> sRGBToLinear(const std::vector<float>& image)
+{
+    std::vector<float> ret = image;
+    for (float& f : ret)
+        f = srgb_to_linear_float(f);
+    return ret;
+}
+
+std::vector<float> LinearTosRGB(const std::vector<float>& image)
+{
+    std::vector<float> ret = image;
+    for (float& f : ret)
+        f = linear_to_srgb_float(f);
+    return ret;
 }
 
 float Quantize(float value, size_t quantizationLevels)
@@ -105,9 +118,8 @@ float Quantize(float value, size_t quantizationLevels)
 }
 
 template <typename LAMBDA>
-void DoTest(const char* fileName, const std::vector<float>& gradient, float randMin, float randMax, const LAMBDA& lambda)
+void DoTest(const char* fileName, std::vector<float> gradient, float randMin, float randMax, bool sRGBBeforeDither, const LAMBDA& lambda)
 {
-    std::vector<float> gradientQuantized(c_gradientWidth*c_gradientHeight);
     std::vector<float> noise(c_gradientWidth*c_gradientHeight);
     std::vector<float> gradientDithered(c_gradientWidth*c_gradientHeight);
     std::vector<float> gradientError(c_gradientWidth*c_gradientHeight);
@@ -116,14 +128,13 @@ void DoTest(const char* fileName, const std::vector<float>& gradient, float rand
 
     size_t quantizationLevels = 6;
 
+    if (sRGBBeforeDither)
+        gradient = LinearTosRGB(gradient);
+
     for (size_t iy = 0; iy < c_gradientHeight; ++iy)
     {
         for (size_t ix = 0; ix < c_gradientWidth; ++ix)
         {
-            // make quantized value
-            float quantizedValue = Quantize(gradient[iy*c_gradientWidth + ix], quantizationLevels);
-            gradientQuantized[iy*c_gradientWidth + ix] = quantizedValue;
-
             // dither and quantize
             float randValueRaw = lambda(ix, iy);
             float randValue = randValueRaw / float(quantizationLevels);
@@ -158,12 +169,18 @@ void DoTest(const char* fileName, const std::vector<float>& gradient, float rand
         }
     }
 
+    if (!sRGBBeforeDither)
+    {
+        gradient = LinearTosRGB(gradient);
+    }
+
+    // TODO: which of these images needs to be converted from linear to sRGB? They may be conditional too. think about em!
+
     std::vector<float> outImage = gradient;
-    //AppendImageVertical(outImage, gradientQuantized);
     //AppendImageVertical(outImage, noise);
     AppendImageVertical(outImage, gradientDithered);
-    AppendImageVertical(outImage, gradientError);
-    AppendImageVertical(outImage, gradientHistogram);
+    AppendImageVertical(outImage, LinearTosRGB(gradientError));
+    AppendImageVertical(outImage, LinearTosRGB(gradientHistogram));
     SaveImage(fileName, outImage, c_gradientWidth, c_gradientHeight * 4);
 }
 
@@ -187,7 +204,13 @@ int main(int argc, char** argv)
     }
 
     // naked quantization tests
-    DoTest("out_round.png", gradient, 0.0f, 1.0f,
+    DoTest("out_none.png", gradient, 0.0f, 1.0f, true,
+        [](size_t ix, size_t iy)
+        {
+            return 0.0f;
+        }
+    );
+    DoTest("out_round.png", gradient, 0.0f, 1.0f, true,
         [](size_t ix, size_t iy)
         {
             return 0.5f;
@@ -195,7 +218,7 @@ int main(int argc, char** argv)
     );
 
     // uniform white noise test
-    DoTest("out_white_1.png", gradient, 0.0f, 1.0f,
+    DoTest("out_white_1.png", gradient, 0.0f, 1.0f, true,
         [] (size_t ix, size_t iy)
         {
             static std::mt19937 rng(GetRNGSeed());
@@ -205,7 +228,7 @@ int main(int argc, char** argv)
     );
 
     // triangular white noise test, made by combining two white noise values
-    DoTest("out_white_2.png", gradient, -0.5f, 1.5f,
+    DoTest("out_white_2.png", gradient, -0.5f, 1.5f, true,
         [] (size_t ix, size_t iy)
         {
             static std::mt19937 rng(GetRNGSeed());
@@ -215,7 +238,7 @@ int main(int argc, char** argv)
     );
 
     // triangular white noise test, made by reshaping a single white noise value
-    DoTest("out_white_2_reshape.png", gradient, -0.5f, 1.5f,
+    DoTest("out_white_2_reshape.png", gradient, -0.5f, 1.5f, true,
         [] (size_t ix, size_t iy)
         {
             static std::mt19937 rng(GetRNGSeed());
@@ -224,8 +247,19 @@ int main(int argc, char** argv)
         }
     );
 
+    // triangular white noise test, made by reshaping a single white noise value
+    // Dithering before sRGB (bad!)
+    DoTest("out_white_2_reshape_linear.png", gradient, -0.5f, 1.5f, false,
+        [](size_t ix, size_t iy)
+        {
+            static std::mt19937 rng(GetRNGSeed());
+            static std::uniform_real_distribution<float> dist;
+            return ReshapeUniformToTriangle(dist(rng));
+        }
+    );
+
     // gaussian-ish white noise test, made by combining 4 white noise values
-    DoTest("out_white_4.png", gradient, -1.5f, 2.5f,
+    DoTest("out_white_4.png", gradient, -1.5f, 2.5f, true,
         [] (size_t ix, size_t iy)
         {
             static std::mt19937 rng(GetRNGSeed());
@@ -235,7 +269,7 @@ int main(int argc, char** argv)
     );
 
     // gaussian-ish white noise test, made by combining 8 white noise values
-    DoTest("out_white_8.png", gradient, -3.5f, 4.5f,
+    DoTest("out_white_8.png", gradient, -3.5f, 4.5f, true,
         [] (size_t ix, size_t iy)
         {
             static std::mt19937 rng(GetRNGSeed());
@@ -245,7 +279,7 @@ int main(int argc, char** argv)
     );
 
     // gaussian-ish white noise test, made by combining 16 white noise values
-    DoTest("out_white_16.png", gradient, -7.5f, 8.5f,
+    DoTest("out_white_16.png", gradient, -7.5f, 8.5f, true,
         [](size_t ix, size_t iy)
     {
         static std::mt19937 rng(GetRNGSeed());
@@ -263,7 +297,7 @@ int main(int argc, char** argv)
         uint8* bnb = stbi_load("BlueNoise64_B.png", &w, &h, &c, 4);
 
         // uniform blue noise test
-        DoTest("out_blue_1.png", gradient, 0.0f, 1.0f,
+        DoTest("out_blue_1.png", gradient, 0.0f, 1.0f, true,
             [=] (size_t ix, size_t iy)
             {
                 ix = ix % w;
@@ -273,7 +307,7 @@ int main(int argc, char** argv)
         );
 
         // triangular blue noise test, made by combining two blue noise values
-        DoTest("out_blue_2.png", gradient, -0.5f, 1.5f,
+        DoTest("out_blue_2.png", gradient, -0.5f, 1.5f, true,
             [=] (size_t ix, size_t iy)
             {
                 ix = ix % w;
@@ -285,7 +319,19 @@ int main(int argc, char** argv)
         );
 
         // triangular blue noise test, made by reshaping a single blue noise value
-        DoTest("out_blue_2_reshape.png", gradient, -0.5f, 1.5f,
+        DoTest("out_blue_2_reshape.png", gradient, -0.5f, 1.5f, true,
+            [=](size_t ix, size_t iy)
+            {
+                ix = ix % w;
+                iy = iy % h;
+                float value = float(bna[(iy*w + ix) * 4]) / 255.0f;
+                return ReshapeUniformToTriangle(value);
+            }
+        );
+
+        // triangular blue noise test, made by reshaping a single blue noise value
+        // Dithering before sRGB (bad!)
+        DoTest("out_blue_2_reshape_linear.png", gradient, -0.5f, 1.5f, false,
             [=](size_t ix, size_t iy)
             {
                 ix = ix % w;
