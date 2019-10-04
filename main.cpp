@@ -107,6 +107,8 @@ float Quantize(float value, size_t quantizationLevels)
 template <typename LAMBDA>
 void DoTest(const char* fileName, const std::vector<float>& gradient, float randMin, float randMax, const LAMBDA& lambda)
 {
+    std::vector<float> gradientQuantized(c_gradientWidth*c_gradientHeight);
+    std::vector<float> noise(c_gradientWidth*c_gradientHeight);
     std::vector<float> gradientDithered(c_gradientWidth*c_gradientHeight);
     std::vector<float> gradientError(c_gradientWidth*c_gradientHeight);
     std::vector<float> gradientHistogram(c_gradientWidth*c_gradientHeight);
@@ -118,11 +120,13 @@ void DoTest(const char* fileName, const std::vector<float>& gradient, float rand
     {
         for (size_t ix = 0; ix < c_gradientWidth; ++ix)
         {
-            // get random value
-            float randValueRaw = lambda(ix, iy);
-            float randValue = randValueRaw / float(quantizationLevels);
+            // make quantized value
+            float quantizedValue = Quantize(gradient[iy*c_gradientWidth + ix], quantizationLevels);
+            gradientQuantized[iy*c_gradientWidth + ix] = quantizedValue;
 
             // dither and quantize
+            float randValueRaw = lambda(ix, iy);
+            float randValue = randValueRaw / float(quantizationLevels);
             float ditheredValue = Quantize(gradient[iy*c_gradientWidth + ix] + randValue, quantizationLevels);
             gradientDithered[iy*c_gradientWidth + ix] = ditheredValue;
 
@@ -133,6 +137,9 @@ void DoTest(const char* fileName, const std::vector<float>& gradient, float rand
             float randValueHistogram = (randValueRaw - randMin) / (randMax - randMin);
             size_t histogramBucket = Clamp<size_t>(size_t(randValueHistogram * (c_gradientWidth - 1) + 0.5f), 0, c_gradientWidth - 1);
             histogram[histogramBucket]++;
+
+            // make noise image
+            noise[iy*c_gradientWidth + ix] = randValueHistogram;
         }
     }
 
@@ -152,6 +159,8 @@ void DoTest(const char* fileName, const std::vector<float>& gradient, float rand
     }
 
     std::vector<float> outImage = gradient;
+    //AppendImageVertical(outImage, gradientQuantized);
+    //AppendImageVertical(outImage, noise);
     AppendImageVertical(outImage, gradientDithered);
     AppendImageVertical(outImage, gradientError);
     AppendImageVertical(outImage, gradientHistogram);
@@ -178,13 +187,7 @@ int main(int argc, char** argv)
     }
 
     // naked quantization tests
-    DoTest("out_none.png", gradient, 0.0f, 1.0f,
-        [](size_t ix, size_t iy)
-        {
-            return 0.0f;
-        }
-    );
-    DoTest("out_none_round.png", gradient, 0.0f, 1.0f,
+    DoTest("out_round.png", gradient, 0.0f, 1.0f,
         [](size_t ix, size_t iy)
         {
             return 0.5f;
@@ -316,6 +319,11 @@ int main(int argc, char** argv)
 
 TODO:
 
+The problem is you need to dither AFTER sRGB. Show the difference to show how bad it is!
+ * get sRGB out of saving images.
+ * convert them on an as needed basis
+ * figure out which should / should not be converted!
+
 - DFT of noise? or is linking to previous post enough. actually it would be nice to see frequencies i guess.
 - threshold tests of blue noise along with histogram and DFT?
 
@@ -329,6 +337,7 @@ Notes:
 * link to last blog post about noise color being independent of distribution?
 * "The error resulting from a triangularly distributed noise is independent of the signal."
 * when quantizing for eg 3 levels, you can quantize to 0/3, 1/3, 2/3.  OR can quantize to 0/2, 1/2, 2/2.  This is doing the first way because it's better for dithering due to last bucket. As bucket count goes up, the choice matters less.
+* sRGB and dithering: https://twitter.com/Atrix256/status/1179971512461225984?s=20
 
 Future:
 ! DFT circle by packing hexagons?
