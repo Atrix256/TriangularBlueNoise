@@ -343,6 +343,9 @@ TODO:
 
 * triangle dithering at boundaries, uniform in the middle, like mikkel talks about
 
+! subtractive dithering has smaller noise magnitude!
+
+! confusing: they should floyd steinberg dithering which made blue noise (ish? or actual?) results. They showed how adding dithering (white noise) improved it. page 56
 
 
 Blog:
@@ -353,6 +356,7 @@ the actual error to a [0;1] range gives a much more accurate depiction of the er
 
 ? should you show multiple quantilzation levels? it might help with triangle dithering at boundaries, to have a low bucket count.
 
+! i do think that when low discrepancy animating noise over time, that you should be using triangular distributed noise. 1 bit vs N bit.
 
 Notes:
 * working in float because we need to dither in linear color space.
@@ -368,7 +372,18 @@ Notes:
 * when quantizing for eg 3 levels, you can quantize to 0/3, 1/3, 2/3.  OR can quantize to 0/2, 1/2, 2/2.  This is doing the first way because it's better for dithering due to last bucket. As bucket count goes up, the choice matters less.
 * sRGB and dithering: https://twitter.com/Atrix256/status/1179971512461225984?s=20
 
+
+Why TPDF?  it controls the second moment. white noise only controls the first.
+TPDF dither does not control the third or higher moments of the total error signal. However, after extensive testing on the subject, it is generally agreed that the human ear is not
+sensitive to statistical moments higher than the second. This means that trying to control total
+error moments higher than the second moment is unnecessary for audio applications, but could
+be relevant in some measurement applications.
+
+
+
 Future:
 ! DFT circle by packing hexagons?
+* subtractive dither? (seems neat! subtract dither on playback side)
+* denoising stuff - guided filter
 
 */
