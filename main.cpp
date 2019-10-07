@@ -21,13 +21,6 @@ static const size_t c_gradientHeight = 64;
 
 
 
-enum class SRGB
-{
-    Before,
-    After,
-    None
-};
-
 inline std::seed_seq& GetRNGSeed()
 {
 #if DETERMINISTIC()
@@ -125,18 +118,19 @@ float Quantize(float value, size_t quantizationLevels)
 }
 
 template <typename LAMBDA>
-void DoTest(const char* fileName, std::vector<float> gradient, float randMin, float randMax, SRGB sRGB, const LAMBDA& lambda)
+void DoTest(const char* fileName, std::vector<float> gradient, float randMin, float randMax, const LAMBDA& lambda)
 {
     std::vector<float> noise(c_gradientWidth*c_gradientHeight);
     std::vector<float> gradientDithered(c_gradientWidth*c_gradientHeight);
-    std::vector<float> gradientError(c_gradientWidth*c_gradientHeight);
+    std::vector<float> gradientAbsError(c_gradientWidth*c_gradientHeight);
+    std::vector<float> gradientNormalizedError(c_gradientWidth*c_gradientHeight);
     std::vector<float> gradientHistogram(c_gradientWidth*c_gradientHeight);
     std::vector<uint32> histogram(c_gradientWidth, 0);
 
-    size_t quantizationLevels = 6;
+    float errorMin = FLT_MAX;
+    float errorMax = -FLT_MAX;
 
-    if (sRGB == SRGB::Before)
-        gradient = LinearTosRGB(gradient);
+    size_t quantizationLevels = 6;
 
     for (size_t iy = 0; iy < c_gradientHeight; ++iy)
     {
@@ -149,7 +143,11 @@ void DoTest(const char* fileName, std::vector<float> gradient, float randMin, fl
             gradientDithered[iy*c_gradientWidth + ix] = ditheredValue;
 
             // error image
-            gradientError[iy*c_gradientWidth + ix] = std::abs(gradient[iy*c_gradientWidth + ix] - ditheredValue);
+            float error = gradient[iy*c_gradientWidth + ix] - ditheredValue;
+            gradientAbsError[iy*c_gradientWidth + ix] = std::abs(error);
+            gradientNormalizedError[iy*c_gradientWidth + ix] = error;
+            errorMin = std::min(errorMin, error);
+            errorMax = std::max(errorMax, error);
 
             // histogram
             float randValueHistogram = (randValueRaw - randMin) / (randMax - randMin);
@@ -160,6 +158,10 @@ void DoTest(const char* fileName, std::vector<float> gradient, float randMin, fl
             noise[iy*c_gradientWidth + ix] = randValueHistogram;
         }
     }
+
+    // normalize the error
+    for (float& f : gradientNormalizedError)
+        f = (f - errorMin) / (errorMax - errorMin);
 
     // make histogram image
     uint32 maxHistogramValue = histogram[0];
@@ -176,21 +178,13 @@ void DoTest(const char* fileName, std::vector<float> gradient, float randMin, fl
         }
     }
 
-    // TODO: if we are supposed to sRGB after, we also need to sRGB the gradientDithered i think?
-    if (sRGB == SRGB::After)
-    {
-        gradient = LinearTosRGB(gradient);
-        gradientDithered = LinearTosRGB(gradientDithered);
-    }
-
-    // TODO: which of these images needs to be converted from linear to sRGB? They may be conditional too. think about em!
-
     std::vector<float> outImage = gradient;
-    AppendImageVertical(outImage, noise);
+    //AppendImageVertical(outImage, noise);
     AppendImageVertical(outImage, gradientDithered);
-    AppendImageVertical(outImage, LinearTosRGB(gradientError));
-    AppendImageVertical(outImage, LinearTosRGB(gradientHistogram));
-    SaveImage(fileName, outImage, c_gradientWidth, c_gradientHeight * 5);
+    //AppendImageVertical(outImage, LinearTosRGB(gradientAbsError));
+    AppendImageVertical(outImage, LinearTosRGB(gradientNormalizedError));
+    AppendImageVertical(outImage, gradientHistogram);
+    SaveImage(fileName, outImage, c_gradientWidth, c_gradientHeight * 4);
 }
 
 // https://www.shadertoy.com/view/4t2SDh
@@ -213,13 +207,13 @@ int main(int argc, char** argv)
     }
 
     // naked quantization tests
-    DoTest("out_none.png", gradient, 0.0f, 1.0f, SRGB::Before,
+    DoTest("out_none.png", gradient, 0.0f, 1.0f,
         [](size_t ix, size_t iy)
         {
             return 0.0f;
         }
     );
-    DoTest("out_round.png", gradient, 0.0f, 1.0f, SRGB::Before,
+    DoTest("out_round.png", gradient, 0.0f, 1.0f,
         [](size_t ix, size_t iy)
         {
             return 0.5f;
@@ -227,7 +221,7 @@ int main(int argc, char** argv)
     );
 
     // uniform white noise test
-    DoTest("out_white_1.png", gradient, 0.0f, 1.0f, SRGB::Before,
+    DoTest("out_white_1.png", gradient, 0.0f, 1.0f,
         [] (size_t ix, size_t iy)
         {
             static std::mt19937 rng(GetRNGSeed());
@@ -237,7 +231,7 @@ int main(int argc, char** argv)
     );
 
     // triangular white noise test, made by combining two white noise values
-    DoTest("out_white_2.png", gradient, -0.5f, 1.5f, SRGB::Before,
+    DoTest("out_white_2.png", gradient, -0.5f, 1.5f,
         [] (size_t ix, size_t iy)
         {
             static std::mt19937 rng(GetRNGSeed());
@@ -247,7 +241,7 @@ int main(int argc, char** argv)
     );
 
     // triangular white noise test, made by reshaping a single white noise value
-    DoTest("out_white_2_reshape_sbefore.png", gradient, -0.5f, 1.5f, SRGB::Before,
+    DoTest("out_white_2_reshape.png", gradient, -0.5f, 1.5f,
         [] (size_t ix, size_t iy)
         {
             static std::mt19937 rng(GetRNGSeed());
@@ -256,30 +250,8 @@ int main(int argc, char** argv)
         }
     );
 
-    // triangular white noise test, made by reshaping a single white noise value
-    // Dithering before sRGB (bad!)
-    DoTest("out_white_2_reshape_safter.png", gradient, -0.5f, 1.5f, SRGB::After,
-        [](size_t ix, size_t iy)
-        {
-            static std::mt19937 rng(GetRNGSeed());
-            static std::uniform_real_distribution<float> dist;
-            return ReshapeUniformToTriangle(dist(rng));
-        }
-    );
-
-    // triangular white noise test, made by reshaping a single white noise value
-    // no sRGB
-    DoTest("out_white_2_reshape_snone.png", gradient, -0.5f, 1.5f, SRGB::None,
-        [](size_t ix, size_t iy)
-    {
-        static std::mt19937 rng(GetRNGSeed());
-        static std::uniform_real_distribution<float> dist;
-        return ReshapeUniformToTriangle(dist(rng));
-    }
-    );
-
     // gaussian-ish white noise test, made by combining 4 white noise values
-    DoTest("out_white_4.png", gradient, -1.5f, 2.5f, SRGB::Before,
+    DoTest("out_white_4.png", gradient, -1.5f, 2.5f,
         [] (size_t ix, size_t iy)
         {
             static std::mt19937 rng(GetRNGSeed());
@@ -289,7 +261,7 @@ int main(int argc, char** argv)
     );
 
     // gaussian-ish white noise test, made by combining 8 white noise values
-    DoTest("out_white_8.png", gradient, -3.5f, 4.5f, SRGB::Before,
+    DoTest("out_white_8.png", gradient, -3.5f, 4.5f,
         [] (size_t ix, size_t iy)
         {
             static std::mt19937 rng(GetRNGSeed());
@@ -299,7 +271,7 @@ int main(int argc, char** argv)
     );
 
     // gaussian-ish white noise test, made by combining 16 white noise values
-    DoTest("out_white_16.png", gradient, -7.5f, 8.5f, SRGB::Before,
+    DoTest("out_white_16.png", gradient, -7.5f, 8.5f,
         [](size_t ix, size_t iy)
     {
         static std::mt19937 rng(GetRNGSeed());
@@ -317,7 +289,7 @@ int main(int argc, char** argv)
         uint8* bnb = stbi_load("BlueNoise64_B.png", &w, &h, &c, 4);
 
         // uniform blue noise test
-        DoTest("out_blue_1.png", gradient, 0.0f, 1.0f, SRGB::Before,
+        DoTest("out_blue_1.png", gradient, 0.0f, 1.0f,
             [=] (size_t ix, size_t iy)
             {
                 ix = ix % w;
@@ -327,7 +299,7 @@ int main(int argc, char** argv)
         );
 
         // triangular blue noise test, made by combining two blue noise values
-        DoTest("out_blue_2.png", gradient, -0.5f, 1.5f, SRGB::Before,
+        DoTest("out_blue_2.png", gradient, -0.5f, 1.5f,
             [=] (size_t ix, size_t iy)
             {
                 ix = ix % w;
@@ -339,7 +311,7 @@ int main(int argc, char** argv)
         );
 
         // triangular blue noise test, made by reshaping a single blue noise value
-        DoTest("out_blue_2_reshape_sbefore.png", gradient, -0.5f, 1.5f, SRGB::Before,
+        DoTest("out_blue_2_reshape.png", gradient, -0.5f, 1.5f,
             [=](size_t ix, size_t iy)
             {
                 ix = ix % w;
@@ -348,42 +320,10 @@ int main(int argc, char** argv)
                 return ReshapeUniformToTriangle(value);
             }
         );
-
-        // triangular blue noise test, made by reshaping a single blue noise value
-        // Dithering before sRGB (bad!)
-        DoTest("out_blue_2_reshape_safter.png", gradient, -0.5f, 1.5f, SRGB::After,
-            [=](size_t ix, size_t iy)
-            {
-                ix = ix % w;
-                iy = iy % h;
-                float value = float(bna[(iy*w + ix) * 4]) / 255.0f;
-                return ReshapeUniformToTriangle(value);
-            }
-        );
-
-        // triangular blue noise test, made by reshaping a single blue noise value
-        // No sRGB
-        DoTest("out_blue_2_reshape_snone.png", gradient, -0.5f, 1.5f, SRGB::None,
-            [=](size_t ix, size_t iy)
-            {
-                ix = ix % w;
-                iy = iy % h;
-                float value = float(bna[(iy*w + ix) * 4]) / 255.0f;
-                return ReshapeUniformToTriangle(value);
-            }
-        );
-
-        // TODO: why is reshaped blue noise so bad? maybe cause it isn't a float coming in, but a uint8?
-        // TODO: blue noise by averaging is ugly ):
 
         stbi_image_free(bna);
         stbi_image_free(bnb);
     }
-
-    // TODO: try working through inverting the CDF for triangle distribution
-
-    // TODO: apparently the -0.5 to +1.5 is useful for dithering?? understand that!
-    // TODO: test multiple quantizations? not just 1 bit? i think thats where the triangular noise helps maybe
 
     // TODO: if adding 2 blue noise together, does it hurt the DFT? maybe do a DFT of dither pattern and see?
     // It looks like it does which makes sense. it's introducing white noise. could maybe try void and cluster to make float values, and then reshape?
@@ -397,14 +337,21 @@ int main(int argc, char** argv)
 
 TODO:
 
-The problem is you need to dither AFTER sRGB. Show the difference to show how bad it is!
- * get sRGB out of saving images.
- * convert them on an as needed basis
- * figure out which should / should not be converted!
+* only show normalized error by default, not abs error
 
-- DFT of noise? or is linking to previous post enough. actually it would be nice to see frequencies i guess.
-- threshold tests of blue noise along with histogram and DFT?
+* do sRGB examples too: linear to srgb, dither, back to linear?
 
+* triangle dithering at boundaries, uniform in the middle, like mikkel talks about
+
+
+
+Blog:
+* show abs error vs normalized error.  Normalized error shows the actual error pattern, regardless of signal.
+"HINDSIGHT: this shows the absolute value of the error, abs(err), which makes it hard
+to see that positive/negative errors “cancel each out” in the noisy areas. Remapping
+the actual error to a [0;1] range gives a much more accurate depiction of the error."
+
+? should you show multiple quantilzation levels? it might help with triangle dithering at boundaries, to have a low bucket count.
 
 
 Notes:
@@ -414,6 +361,7 @@ Notes:
  * page 54 here. there's a link to a paper too. https://www.gdcvault.com/play/1023002/Low-Complexity-High-Fidelity-INSIDE
  * paper: https://uwspace.uwaterloo.ca/bitstream/handle/10012/3867/thesis.pdf;jsessionid=74681FAF2CA22E754C673E9A1E6957EC?sequence=1
  * also this: http://gpuopen.com/wp-content/uploads/2016/03/GdcVdrLottes.pdf#page=83
+* mention this: "GPUs round, so dither-range should be [-1;1[". not -0.5 to 1.5
 
 * link to last blog post about noise color being independent of distribution?
 * "The error resulting from a triangularly distributed noise is independent of the signal."
