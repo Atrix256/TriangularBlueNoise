@@ -148,7 +148,7 @@ float Quantize(float value, size_t quantizationLevels)
 }
 
 template <typename LAMBDA>
-void DoTest(const char* baseFileName, const char* name, const Image& srcImage, float randMin, float randMax, const LAMBDA& lambda)
+void DoTest(const char* baseFileName, const char* name, const Image& srcImage, float randMin, float randMax, bool subtractive, const LAMBDA& lambda)
 {
     char fileName[256];
     sprintf(fileName, baseFileName, name);
@@ -173,6 +173,11 @@ void DoTest(const char* baseFileName, const char* name, const Image& srcImage, f
             float randValueRaw = lambda(ix, iy);
             float randValue = randValueRaw / float(quantizationLevels);
             float ditheredValue = Quantize(srcImage.pixels[iy*srcImage.width + ix] + randValue, quantizationLevels);
+
+            // subtract the noise after quantization if we are doing subtractive dithering
+            if (subtractive)
+                ditheredValue -= randValue;
+
             gradientDithered.pixels[iy*srcImage.width + ix] = ditheredValue;
 
             // error image
@@ -232,13 +237,13 @@ float ReshapeUniformToTriangle(float rnd)
 void DoTests(const Image& srcImage, const char* name)
 {
     // naked quantization tests
-    DoTest("out/%s_none.png", name, srcImage, 0.0f, 1.0f,
+    DoTest("out/%s_none.png", name, srcImage, 0.0f, 1.0f, false,
         [](size_t ix, size_t iy)
         {
             return 0.0f;
         }
     );
-    DoTest("out/%s_round.png", name, srcImage, 0.0f, 1.0f,
+    DoTest("out/%s_round.png", name, srcImage, 0.0f, 1.0f, false,
         [](size_t ix, size_t iy)
         {
             return 0.5f;
@@ -246,7 +251,7 @@ void DoTests(const Image& srcImage, const char* name)
     );
 
     // uniform white noise test
-    DoTest("out/%s_white_1.png", name, srcImage, 0.0f, 1.0f,
+    DoTest("out/%s_white_1.png", name, srcImage, 0.0f, 1.0f, false,
         [] (size_t ix, size_t iy)
         {
             static std::mt19937 rng(GetRNGSeed());
@@ -256,7 +261,7 @@ void DoTests(const Image& srcImage, const char* name)
     );
 
     // triangular white noise test, made by combining two white noise values
-    DoTest("out/%s_white_2.png", name, srcImage, -0.5f, 1.5f,
+    DoTest("out/%s_white_2.png", name, srcImage, -0.5f, 1.5f, false,
         [] (size_t ix, size_t iy)
         {
             static std::mt19937 rng(GetRNGSeed());
@@ -266,7 +271,7 @@ void DoTests(const Image& srcImage, const char* name)
     );
 
     // triangular white noise test, made by reshaping a single white noise value
-    DoTest("out/%s_white_2_reshape.png", name, srcImage, -0.5f, 1.5f,
+    DoTest("out/%s_white_2_reshape.png", name, srcImage, -0.5f, 1.5f, false,
         [] (size_t ix, size_t iy)
         {
             static std::mt19937 rng(GetRNGSeed());
@@ -276,7 +281,7 @@ void DoTests(const Image& srcImage, const char* name)
     );
 
     // gaussian-ish white noise test, made by combining 4 white noise values
-    DoTest("out/%s_white_4.png", name, srcImage, -1.5f, 2.5f,
+    DoTest("out/%s_white_4.png", name, srcImage, -1.5f, 2.5f, false,
         [] (size_t ix, size_t iy)
         {
             static std::mt19937 rng(GetRNGSeed());
@@ -286,7 +291,7 @@ void DoTests(const Image& srcImage, const char* name)
     );
 
     // gaussian-ish white noise test, made by combining 8 white noise values
-    DoTest("out/%s_white_8.png", name, srcImage, -3.5f, 4.5f,
+    DoTest("out/%s_white_8.png", name, srcImage, -3.5f, 4.5f, false,
         [] (size_t ix, size_t iy)
         {
             static std::mt19937 rng(GetRNGSeed());
@@ -296,7 +301,7 @@ void DoTests(const Image& srcImage, const char* name)
     );
 
     // gaussian-ish white noise test, made by combining 16 white noise values
-    DoTest("out/%s_white_16.png", name, srcImage, -7.5f, 8.5f,
+    DoTest("out/%s_white_16.png", name, srcImage, -7.5f, 8.5f, false,
         [](size_t ix, size_t iy)
         {
             static std::mt19937 rng(GetRNGSeed());
@@ -307,6 +312,16 @@ void DoTests(const Image& srcImage, const char* name)
         }
     );
 
+    // subtractive dithering uniform white noise test
+    DoTest("out/%s_white_1_subtractive.png", name, srcImage, 0.0f, 1.0f, true,
+        [] (size_t ix, size_t iy)
+        {
+            static std::mt19937 rng(GetRNGSeed());
+            static std::uniform_real_distribution<float> dist;
+            return dist(rng);
+        }
+    );
+
     // blue noise
     {
         int w, h, c;
@@ -314,7 +329,7 @@ void DoTests(const Image& srcImage, const char* name)
         uint8* bnb = stbi_load("BlueNoise64_B.png", &w, &h, &c, 4);
 
         // uniform blue noise test
-        DoTest("out/%s_blue_1.png", name, srcImage, 0.0f, 1.0f,
+        DoTest("out/%s_blue_1.png", name, srcImage, 0.0f, 1.0f, false,
             [=] (size_t ix, size_t iy)
             {
                 ix = ix % w;
@@ -324,7 +339,7 @@ void DoTests(const Image& srcImage, const char* name)
         );
 
         // triangular blue noise test, made by combining two blue noise values
-        DoTest("out/%s_blue_2.png", name, srcImage, -0.5f, 1.5f,
+        DoTest("out/%s_blue_2.png", name, srcImage, -0.5f, 1.5f, false,
             [=] (size_t ix, size_t iy)
             {
                 ix = ix % w;
@@ -336,13 +351,23 @@ void DoTests(const Image& srcImage, const char* name)
         );
 
         // triangular blue noise test, made by reshaping a single blue noise value
-        DoTest("out/%s_blue_2_reshape.png", name, srcImage, -0.5f, 1.5f,
+        DoTest("out/%s_blue_2_reshape.png", name, srcImage, -0.5f, 1.5f, false,
             [=](size_t ix, size_t iy)
             {
                 ix = ix % w;
                 iy = iy % h;
                 float value = float(bna[(iy*w + ix) * 4]) / 255.0f;
                 return ReshapeUniformToTriangle(value);
+            }
+        );
+
+        // subtractive dithering uniform blue noise test
+        DoTest("out/%s_blue_1_subtractive.png", name, srcImage, 0.0f, 1.0f, true,
+            [=] (size_t ix, size_t iy)
+            {
+                ix = ix % w;
+                iy = iy % h;
+                return float(bna[(iy*w + ix) * 4]) / 255.0f;
             }
         );
 
