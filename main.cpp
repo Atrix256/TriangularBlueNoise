@@ -19,6 +19,8 @@ typedef uint32_t uint32;
 static const size_t c_gradientWidth = 512;
 static const size_t c_gradientHeight = 64;
 
+static const size_t c_quantizationLevels = 6;
+
 
 
 struct Image
@@ -163,16 +165,14 @@ void DoTest(const char* baseFileName, const char* name, const Image& srcImage, f
     float errorMin = FLT_MAX;
     float errorMax = -FLT_MAX;
 
-    size_t quantizationLevels = 6;
-
     for (size_t iy = 0; iy < srcImage.height; ++iy)
     {
         for (size_t ix = 0; ix < srcImage.width; ++ix)
         {
             // dither and quantize
             float randValueRaw = lambda(ix, iy);
-            float randValue = randValueRaw / float(quantizationLevels);
-            float ditheredValue = Quantize(srcImage.pixels[iy*srcImage.width + ix] + randValue, quantizationLevels);
+            float randValue = randValueRaw / float(c_quantizationLevels);
+            float ditheredValue = Quantize(srcImage.pixels[iy*srcImage.width + ix] + randValue, c_quantizationLevels);
 
             // subtract the noise after quantization if we are doing subtractive dithering
             if (subtractive)
