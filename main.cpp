@@ -408,10 +408,6 @@ int main(int argc, char** argv)
         stbi_image_free(sceneryImg);
     }
 
-    // TODO: if adding 2 blue noise together, does it hurt the DFT? maybe do a DFT of dither pattern and see?
-    // It looks like it does which makes sense. it's introducing white noise. could maybe try void and cluster to make float values, and then reshape?
-    // could also try loading an HDR file from the free blue noise texture site
-
     return 0;
 }
 
@@ -420,18 +416,16 @@ int main(int argc, char** argv)
 
 TODO:
 
-* do subtractive dither
+? subtractive dither with blue noise doesn't look input signal independent. That's a bummer.
+
 * maybe show mean and variance (first 2 moments?)
-
-* only show normalized error by default, not abs error
-
-* do sRGB examples too: linear to srgb, dither, back to linear?
 
 * triangle dithering at boundaries, uniform in the middle, like mikkel talks about
 
-! subtractive dithering has smaller noise magnitude!
+! subtractive dithering has smaller noise magnitude it says. is there a way to show that?
 
 ! confusing: they should floyd steinberg dithering which made blue noise (ish? or actual?) results. They showed how adding dithering (white noise) improved it. page 56
+ * i think it's the fixed kernel kind, not the error relaxation kind
 
 
 Blog:
@@ -442,12 +436,17 @@ the actual error to a [0;1] range gives a much more accurate depiction of the er
 
 * show differences between abs error and normalized error
 
+* talk about how to do sRGB: convert to sRGB, dither, then convert back to liner
+
 Mention that this might be good for textures on disk!
  * also for gbuffers and similar 
 
 ? should you show multiple quantilzation levels? it might help with triangle dithering at boundaries, to have a low bucket count.
 
 ! i do think that when low discrepancy animating noise over time, that you should be using triangular distributed noise. 1 bit vs N bit.
+
+* adding two blue noises together introduces some white noise. reshaping is better for this.
+* we could enforce an even histogram of white noise, but i don't think it'd make a big difference.
 
 Notes:
 * working in float because we need to dither in linear color space.
