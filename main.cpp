@@ -148,8 +148,11 @@ float Quantize(float value, size_t quantizationLevels)
 }
 
 template <typename LAMBDA>
-void DoTest(const char* fileName, const Image& srcImage, float randMin, float randMax, const LAMBDA& lambda)
+void DoTest(const char* baseFileName, const char* name, const Image& srcImage, float randMin, float randMax, const LAMBDA& lambda)
 {
+    char fileName[256];
+    sprintf(fileName, baseFileName, name);
+
     Image noise = srcImage;
     Image gradientDithered = srcImage;
     Image gradientAbsError = srcImage;
@@ -226,24 +229,16 @@ float ReshapeUniformToTriangle(float rnd)
     return rnd;
 }
 
-int main(int argc, char** argv)
+void DoTests(const Image& srcImage, const char* name)
 {
-    // make the (linear) gradient image
-    Image gradient(c_gradientWidth, c_gradientHeight);
-    {
-        for (size_t iy = 0; iy < c_gradientHeight; ++iy)
-            for (size_t ix = 0; ix < c_gradientWidth; ++ix)
-                gradient.pixels[iy*c_gradientWidth + ix] = float(ix) / float(c_gradientWidth - 1);
-    }
-
     // naked quantization tests
-    DoTest("out/none.png", gradient, 0.0f, 1.0f,
+    DoTest("out/%s_none.png", name, srcImage, 0.0f, 1.0f,
         [](size_t ix, size_t iy)
         {
             return 0.0f;
         }
     );
-    DoTest("out/round.png", gradient, 0.0f, 1.0f,
+    DoTest("out/%s_round.png", name, srcImage, 0.0f, 1.0f,
         [](size_t ix, size_t iy)
         {
             return 0.5f;
@@ -251,7 +246,7 @@ int main(int argc, char** argv)
     );
 
     // uniform white noise test
-    DoTest("out/white_1.png", gradient, 0.0f, 1.0f,
+    DoTest("out/%s_white_1.png", name, srcImage, 0.0f, 1.0f,
         [] (size_t ix, size_t iy)
         {
             static std::mt19937 rng(GetRNGSeed());
@@ -261,7 +256,7 @@ int main(int argc, char** argv)
     );
 
     // triangular white noise test, made by combining two white noise values
-    DoTest("out/white_2.png", gradient, -0.5f, 1.5f,
+    DoTest("out/%s_white_2.png", name, srcImage, -0.5f, 1.5f,
         [] (size_t ix, size_t iy)
         {
             static std::mt19937 rng(GetRNGSeed());
@@ -271,7 +266,7 @@ int main(int argc, char** argv)
     );
 
     // triangular white noise test, made by reshaping a single white noise value
-    DoTest("out/white_2_reshape.png", gradient, -0.5f, 1.5f,
+    DoTest("out/%s_white_2_reshape.png", name, srcImage, -0.5f, 1.5f,
         [] (size_t ix, size_t iy)
         {
             static std::mt19937 rng(GetRNGSeed());
@@ -281,7 +276,7 @@ int main(int argc, char** argv)
     );
 
     // gaussian-ish white noise test, made by combining 4 white noise values
-    DoTest("out/white_4.png", gradient, -1.5f, 2.5f,
+    DoTest("out/%s_white_4.png", name, srcImage, -1.5f, 2.5f,
         [] (size_t ix, size_t iy)
         {
             static std::mt19937 rng(GetRNGSeed());
@@ -291,7 +286,7 @@ int main(int argc, char** argv)
     );
 
     // gaussian-ish white noise test, made by combining 8 white noise values
-    DoTest("out/white_8.png", gradient, -3.5f, 4.5f,
+    DoTest("out/%s_white_8.png", name, srcImage, -3.5f, 4.5f,
         [] (size_t ix, size_t iy)
         {
             static std::mt19937 rng(GetRNGSeed());
@@ -301,7 +296,7 @@ int main(int argc, char** argv)
     );
 
     // gaussian-ish white noise test, made by combining 16 white noise values
-    DoTest("out/white_16.png", gradient, -7.5f, 8.5f,
+    DoTest("out/%s_white_16.png", name, srcImage, -7.5f, 8.5f,
         [](size_t ix, size_t iy)
         {
             static std::mt19937 rng(GetRNGSeed());
@@ -319,7 +314,7 @@ int main(int argc, char** argv)
         uint8* bnb = stbi_load("BlueNoise64_B.png", &w, &h, &c, 4);
 
         // uniform blue noise test
-        DoTest("out/blue_1.png", gradient, 0.0f, 1.0f,
+        DoTest("out/%s_blue_1.png", name, srcImage, 0.0f, 1.0f,
             [=] (size_t ix, size_t iy)
             {
                 ix = ix % w;
@@ -329,7 +324,7 @@ int main(int argc, char** argv)
         );
 
         // triangular blue noise test, made by combining two blue noise values
-        DoTest("out/blue_2.png", gradient, -0.5f, 1.5f,
+        DoTest("out/%s_blue_2.png", name, srcImage, -0.5f, 1.5f,
             [=] (size_t ix, size_t iy)
             {
                 ix = ix % w;
@@ -341,7 +336,7 @@ int main(int argc, char** argv)
         );
 
         // triangular blue noise test, made by reshaping a single blue noise value
-        DoTest("out/blue_2_reshape.png", gradient, -0.5f, 1.5f,
+        DoTest("out/%s_blue_2_reshape.png", name, srcImage, -0.5f, 1.5f,
             [=](size_t ix, size_t iy)
             {
                 ix = ix % w;
@@ -353,6 +348,39 @@ int main(int argc, char** argv)
 
         stbi_image_free(bna);
         stbi_image_free(bnb);
+    }
+}
+
+int main(int argc, char** argv)
+{
+    // do tests on a gradient
+    {
+        Image gradient(c_gradientWidth, c_gradientHeight);
+        {
+            for (size_t iy = 0; iy < c_gradientHeight; ++iy)
+                for (size_t ix = 0; ix < c_gradientWidth; ++ix)
+                    gradient.pixels[iy*c_gradientWidth + ix] = float(ix) / float(c_gradientWidth - 1);
+        }
+
+        DoTests(gradient, "gradient");
+    }
+
+    // do test on a photo
+    {
+        int w, h, c;
+        uint8* sceneryImg = stbi_load("scenery.png", &w, &h, &c, 4);
+
+        Image scenery(w, h);
+        const uint8* ptr = sceneryImg;
+        for (size_t i = 0; i < w*h; ++i)
+        {
+            scenery.pixels[i] = Clamp((float(ptr[0]) * 0.3f + float(ptr[1]) * 0.59f + float(ptr[2]) * 0.11f) / 255.0f, 0.0f, 1.0f);
+            ptr += 4;
+        }
+
+        DoTests(scenery, "scenery");
+
+        stbi_image_free(sceneryImg);
     }
 
     // TODO: if adding 2 blue noise together, does it hurt the DFT? maybe do a DFT of dither pattern and see?
@@ -368,7 +396,6 @@ int main(int argc, char** argv)
 TODO:
 
 * do subtractive dither
-* use a real image too (rmv image)
 * maybe show mean and variance (first 2 moments?)
 
 * only show normalized error by default, not abs error
@@ -410,6 +437,7 @@ Notes:
 * "The error resulting from a triangularly distributed noise is independent of the signal."
 * when quantizing for eg 3 levels, you can quantize to 0/3, 1/3, 2/3.  OR can quantize to 0/2, 1/2, 2/2.  This is doing the first way because it's better for dithering due to last bucket. As bucket count goes up, the choice matters less.
 * sRGB and dithering: https://twitter.com/Atrix256/status/1179971512461225984?s=20
+* Mikkel mentioned that -1 to +1 is better on gpus due to rounding
 
 
 Why TPDF?  it controls the second moment. white noise only controls the first.
