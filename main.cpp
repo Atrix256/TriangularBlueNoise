@@ -21,6 +21,24 @@ static const size_t c_gradientHeight = 64;
 
 
 
+struct Image
+{
+    Image()
+    {
+    }
+
+    Image(size_t w, size_t h)
+    {
+        width = w;
+        height = h;
+        pixels.resize(w*h);
+    }
+
+    std::vector<float> pixels;
+    size_t width = 0;
+    size_t height = 0;
+};
+
 inline std::seed_seq& GetRNGSeed()
 {
 #if DETERMINISTIC()
@@ -79,21 +97,25 @@ float linear_to_srgb_float(float x) {
 }
 
 // Assumes src and dest have the same width
-void AppendImageVertical(std::vector<float>& dest, const std::vector<float>& src)
+void AppendImageVertical(Image& dest, const Image& src)
 {
-    size_t destSize = dest.size();
-    size_t srcSize = src.size();
-    dest.resize(destSize + srcSize);
-    memcpy(&dest[destSize], src.data(), srcSize * sizeof(src[0]));
+    assert(dest.width == src.width);
+
+    size_t destSize = dest.pixels.size();
+    size_t srcSize = src.pixels.size();
+    dest.pixels.resize(destSize + srcSize);
+    memcpy(&dest.pixels[destSize], src.pixels.data(), srcSize * sizeof(src.pixels[0]));
+
+    dest.height += src.height;
 }
 
-void SaveImage(const char* fileName, const std::vector<float>& image, size_t width, size_t height)
+void SaveImage(const char* fileName, const Image& image)
 {
-    std::vector<uint8> outImage(image.size());
-    for (size_t index = 0; index < image.size(); ++index)
-        outImage[index] = uint8(Clamp(image[index] * 255.0f + 0.5f, 0.0f, 255.0f));
+    std::vector<uint8> outImage(image.pixels.size());
+    for (size_t index = 0; index < image.pixels.size(); ++index)
+        outImage[index] = uint8(Clamp(image.pixels[index] * 255.0f + 0.5f, 0.0f, 255.0f));
 
-    stbi_write_png(fileName, int(width), int(height), 1, outImage.data(), 0);
+    stbi_write_png(fileName, int(image.width), int(image.height), 1, outImage.data(), 0);
 }
 
 std::vector<float> sRGBToLinear(const std::vector<float>& image)
@@ -112,55 +134,63 @@ std::vector<float> LinearTosRGB(const std::vector<float>& image)
     return ret;
 }
 
+Image LinearTosRGB(const Image& image)
+{
+    Image ret = image;
+    for (float& f : ret.pixels)
+        f = linear_to_srgb_float(f);
+    return ret;
+}
+
 float Quantize(float value, size_t quantizationLevels)
 {
     return Clamp(floor(value * float(quantizationLevels)) / float(quantizationLevels), 0.0f, float(quantizationLevels));
 }
 
 template <typename LAMBDA>
-void DoTest(const char* fileName, std::vector<float> gradient, float randMin, float randMax, const LAMBDA& lambda)
+void DoTest(const char* fileName, const Image& srcImage, float randMin, float randMax, const LAMBDA& lambda)
 {
-    std::vector<float> noise(c_gradientWidth*c_gradientHeight);
-    std::vector<float> gradientDithered(c_gradientWidth*c_gradientHeight);
-    std::vector<float> gradientAbsError(c_gradientWidth*c_gradientHeight);
-    std::vector<float> gradientNormalizedError(c_gradientWidth*c_gradientHeight);
-    std::vector<float> gradientHistogram(c_gradientWidth*c_gradientHeight);
-    std::vector<uint32> histogram(c_gradientWidth, 0);
+    Image noise = srcImage;
+    Image gradientDithered = srcImage;
+    Image gradientAbsError = srcImage;
+    Image gradientNormalizedError = srcImage;
+    Image gradientHistogram = srcImage;
+    std::vector<uint32> histogram(srcImage.width, 0);
 
     float errorMin = FLT_MAX;
     float errorMax = -FLT_MAX;
 
     size_t quantizationLevels = 6;
 
-    for (size_t iy = 0; iy < c_gradientHeight; ++iy)
+    for (size_t iy = 0; iy < srcImage.height; ++iy)
     {
-        for (size_t ix = 0; ix < c_gradientWidth; ++ix)
+        for (size_t ix = 0; ix < srcImage.width; ++ix)
         {
             // dither and quantize
             float randValueRaw = lambda(ix, iy);
             float randValue = randValueRaw / float(quantizationLevels);
-            float ditheredValue = Quantize(gradient[iy*c_gradientWidth + ix] + randValue, quantizationLevels);
-            gradientDithered[iy*c_gradientWidth + ix] = ditheredValue;
+            float ditheredValue = Quantize(srcImage.pixels[iy*srcImage.width + ix] + randValue, quantizationLevels);
+            gradientDithered.pixels[iy*srcImage.width + ix] = ditheredValue;
 
             // error image
-            float error = gradient[iy*c_gradientWidth + ix] - ditheredValue;
-            gradientAbsError[iy*c_gradientWidth + ix] = std::abs(error);
-            gradientNormalizedError[iy*c_gradientWidth + ix] = error;
+            float error = srcImage.pixels[iy*srcImage.width + ix] - ditheredValue;
+            gradientAbsError.pixels[iy*srcImage.width + ix] = std::abs(error);
+            gradientNormalizedError.pixels[iy*srcImage.width + ix] = error;
             errorMin = std::min(errorMin, error);
             errorMax = std::max(errorMax, error);
 
             // histogram
             float randValueHistogram = (randValueRaw - randMin) / (randMax - randMin);
-            size_t histogramBucket = Clamp<size_t>(size_t(randValueHistogram * (c_gradientWidth - 1) + 0.5f), 0, c_gradientWidth - 1);
+            size_t histogramBucket = Clamp<size_t>(size_t(randValueHistogram * (srcImage.width - 1) + 0.5f), 0, srcImage.width - 1);
             histogram[histogramBucket]++;
 
             // make noise image
-            noise[iy*c_gradientWidth + ix] = randValueHistogram;
+            noise.pixels[iy*srcImage.width + ix] = randValueHistogram;
         }
     }
 
     // normalize the error
-    for (float& f : gradientNormalizedError)
+    for (float& f : gradientNormalizedError.pixels)
         f = (f - errorMin) / (errorMax - errorMin);
 
     // make histogram image
@@ -168,23 +198,23 @@ void DoTest(const char* fileName, std::vector<float> gradient, float randMin, fl
     for (uint32 histogramValue : histogram)
         maxHistogramValue = std::max(maxHistogramValue, histogramValue);
 
-    for (size_t iy = 0; iy < c_gradientHeight; ++iy)
+    for (size_t iy = 0; iy < srcImage.height; ++iy)
     {
-        for (size_t ix = 0; ix < c_gradientWidth; ++ix)
+        for (size_t ix = 0; ix < srcImage.width; ++ix)
         {
             float normalizedHistogramValue = 1.0f - float(histogram[ix]) / float(maxHistogramValue);
-            size_t height = Clamp<size_t>(size_t(normalizedHistogramValue * (c_gradientHeight - 1) + 0.5), 0, c_gradientHeight-1);
-            gradientHistogram[iy*c_gradientWidth + ix] = (iy < height) ? 1.0f : 0.0f;
+            size_t height = Clamp<size_t>(size_t(normalizedHistogramValue * (srcImage.height - 1) + 0.5), 0, srcImage.height - 1);
+            gradientHistogram.pixels[iy*srcImage.width + ix] = (iy < height) ? 1.0f : 0.0f;
         }
     }
 
-    std::vector<float> outImage = gradient;
+    Image outImage = srcImage;
     //AppendImageVertical(outImage, noise);
     AppendImageVertical(outImage, gradientDithered);
     //AppendImageVertical(outImage, LinearTosRGB(gradientAbsError));
     AppendImageVertical(outImage, LinearTosRGB(gradientNormalizedError));
     AppendImageVertical(outImage, gradientHistogram);
-    SaveImage(fileName, outImage, c_gradientWidth, c_gradientHeight * 4);
+    SaveImage(fileName, outImage);
 }
 
 // https://www.shadertoy.com/view/4t2SDh
@@ -199,21 +229,21 @@ float ReshapeUniformToTriangle(float rnd)
 int main(int argc, char** argv)
 {
     // make the (linear) gradient image
-    std::vector<float> gradient(c_gradientWidth*c_gradientHeight);
+    Image gradient(c_gradientWidth, c_gradientHeight);
     {
         for (size_t iy = 0; iy < c_gradientHeight; ++iy)
             for (size_t ix = 0; ix < c_gradientWidth; ++ix)
-                gradient[iy*c_gradientWidth + ix] = float(ix) / float(c_gradientWidth - 1);
+                gradient.pixels[iy*c_gradientWidth + ix] = float(ix) / float(c_gradientWidth - 1);
     }
 
     // naked quantization tests
-    DoTest("out_none.png", gradient, 0.0f, 1.0f,
+    DoTest("out/none.png", gradient, 0.0f, 1.0f,
         [](size_t ix, size_t iy)
         {
             return 0.0f;
         }
     );
-    DoTest("out_round.png", gradient, 0.0f, 1.0f,
+    DoTest("out/round.png", gradient, 0.0f, 1.0f,
         [](size_t ix, size_t iy)
         {
             return 0.5f;
@@ -221,7 +251,7 @@ int main(int argc, char** argv)
     );
 
     // uniform white noise test
-    DoTest("out_white_1.png", gradient, 0.0f, 1.0f,
+    DoTest("out/white_1.png", gradient, 0.0f, 1.0f,
         [] (size_t ix, size_t iy)
         {
             static std::mt19937 rng(GetRNGSeed());
@@ -231,7 +261,7 @@ int main(int argc, char** argv)
     );
 
     // triangular white noise test, made by combining two white noise values
-    DoTest("out_white_2.png", gradient, -0.5f, 1.5f,
+    DoTest("out/white_2.png", gradient, -0.5f, 1.5f,
         [] (size_t ix, size_t iy)
         {
             static std::mt19937 rng(GetRNGSeed());
@@ -241,7 +271,7 @@ int main(int argc, char** argv)
     );
 
     // triangular white noise test, made by reshaping a single white noise value
-    DoTest("out_white_2_reshape.png", gradient, -0.5f, 1.5f,
+    DoTest("out/white_2_reshape.png", gradient, -0.5f, 1.5f,
         [] (size_t ix, size_t iy)
         {
             static std::mt19937 rng(GetRNGSeed());
@@ -251,7 +281,7 @@ int main(int argc, char** argv)
     );
 
     // gaussian-ish white noise test, made by combining 4 white noise values
-    DoTest("out_white_4.png", gradient, -1.5f, 2.5f,
+    DoTest("out/white_4.png", gradient, -1.5f, 2.5f,
         [] (size_t ix, size_t iy)
         {
             static std::mt19937 rng(GetRNGSeed());
@@ -261,7 +291,7 @@ int main(int argc, char** argv)
     );
 
     // gaussian-ish white noise test, made by combining 8 white noise values
-    DoTest("out_white_8.png", gradient, -3.5f, 4.5f,
+    DoTest("out/white_8.png", gradient, -3.5f, 4.5f,
         [] (size_t ix, size_t iy)
         {
             static std::mt19937 rng(GetRNGSeed());
@@ -271,15 +301,15 @@ int main(int argc, char** argv)
     );
 
     // gaussian-ish white noise test, made by combining 16 white noise values
-    DoTest("out_white_16.png", gradient, -7.5f, 8.5f,
+    DoTest("out/white_16.png", gradient, -7.5f, 8.5f,
         [](size_t ix, size_t iy)
-    {
-        static std::mt19937 rng(GetRNGSeed());
-        static std::uniform_real_distribution<float> dist;
-        return dist(rng) + dist(rng) + dist(rng) + dist(rng) + dist(rng) + dist(rng) + dist(rng) + dist(rng) +
-               dist(rng) + dist(rng) + dist(rng) + dist(rng) + dist(rng) + dist(rng) + dist(rng) + dist(rng) -
-               7.5f;
-    }
+        {
+            static std::mt19937 rng(GetRNGSeed());
+            static std::uniform_real_distribution<float> dist;
+            return dist(rng) + dist(rng) + dist(rng) + dist(rng) + dist(rng) + dist(rng) + dist(rng) + dist(rng) +
+                   dist(rng) + dist(rng) + dist(rng) + dist(rng) + dist(rng) + dist(rng) + dist(rng) + dist(rng) -
+                   7.5f;
+        }
     );
 
     // blue noise
@@ -289,7 +319,7 @@ int main(int argc, char** argv)
         uint8* bnb = stbi_load("BlueNoise64_B.png", &w, &h, &c, 4);
 
         // uniform blue noise test
-        DoTest("out_blue_1.png", gradient, 0.0f, 1.0f,
+        DoTest("out/blue_1.png", gradient, 0.0f, 1.0f,
             [=] (size_t ix, size_t iy)
             {
                 ix = ix % w;
@@ -299,7 +329,7 @@ int main(int argc, char** argv)
         );
 
         // triangular blue noise test, made by combining two blue noise values
-        DoTest("out_blue_2.png", gradient, -0.5f, 1.5f,
+        DoTest("out/blue_2.png", gradient, -0.5f, 1.5f,
             [=] (size_t ix, size_t iy)
             {
                 ix = ix % w;
@@ -311,7 +341,7 @@ int main(int argc, char** argv)
         );
 
         // triangular blue noise test, made by reshaping a single blue noise value
-        DoTest("out_blue_2_reshape.png", gradient, -0.5f, 1.5f,
+        DoTest("out/blue_2_reshape.png", gradient, -0.5f, 1.5f,
             [=](size_t ix, size_t iy)
             {
                 ix = ix % w;
@@ -337,6 +367,10 @@ int main(int argc, char** argv)
 
 TODO:
 
+* do subtractive dither
+* use a real image too (rmv image)
+* maybe show mean and variance (first 2 moments?)
+
 * only show normalized error by default, not abs error
 
 * do sRGB examples too: linear to srgb, dither, back to linear?
@@ -353,6 +387,11 @@ Blog:
 "HINDSIGHT: this shows the absolute value of the error, abs(err), which makes it hard
 to see that positive/negative errors “cancel each out” in the noisy areas. Remapping
 the actual error to a [0;1] range gives a much more accurate depiction of the error."
+
+* show differences between abs error and normalized error
+
+Mention that this might be good for textures on disk!
+ * also for gbuffers and similar 
 
 ? should you show multiple quantilzation levels? it might help with triangle dithering at boundaries, to have a low bucket count.
 
