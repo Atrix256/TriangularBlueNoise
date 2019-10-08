@@ -416,6 +416,8 @@ int main(int argc, char** argv)
 
 TODO:
 
+? for subtractive dithering, should we include the top color? like 0/1, 1/1 instead of 0/2, 1/2?
+
 ? subtractive dither with blue noise doesn't look input signal independent. That's a bummer.
 
 * maybe show mean and variance (first 2 moments?)
@@ -426,6 +428,8 @@ TODO:
 
 ! confusing: they should floyd steinberg dithering which made blue noise (ish? or actual?) results. They showed how adding dithering (white noise) improved it. page 56
  * i think it's the fixed kernel kind, not the error relaxation kind
+
+? should we look at this stuff animating over time?
 
 
 Blog:
