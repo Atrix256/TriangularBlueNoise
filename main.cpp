@@ -144,9 +144,14 @@ Image LinearTosRGB(const Image& image)
     return ret;
 }
 
-float Quantize(float value, size_t quantizationLevels)
+// midtread has zero in the middle of a quantization step. Midrise has zero on the edge between two quantization steps.
+// If doing 2 steps of quantizations of [0,1), midtread has values of: 0/2, 1/2, 2/2
+// Midrise has values of 0/2, 1/2
+// I thought subtractive looked too dark, so tried midtread instead of midrise, but had problems due to it hitting the cieling and clamping. More error in bright sections.
+// page of https://uwspace.uwaterloo.ca/bitstream/handle/10012/3867/thesis.pdf;jsessionid=74681FAF2CA22E754C673E9A1E6957EC?sequence=1
+float Quantize(float value, size_t quantizationLevels, bool midtread)
 {
-    return Clamp(floor(value * float(quantizationLevels)) / float(quantizationLevels), 0.0f, float(quantizationLevels));
+    return Clamp(floor(value * float(quantizationLevels) + (midtread ? 0.5f : 0.0f)) / float(quantizationLevels), 0.0f, 1.0f);
 }
 
 template <typename LAMBDA>
@@ -172,7 +177,7 @@ void DoTest(const char* baseFileName, const char* name, const Image& srcImage, f
             // dither and quantize
             float randValueRaw = lambda(ix, iy);
             float randValue = randValueRaw / float(c_quantizationLevels);
-            float ditheredValue = Quantize(srcImage.pixels[iy*srcImage.width + ix] + randValue, c_quantizationLevels);
+            float ditheredValue = Quantize(srcImage.pixels[iy*srcImage.width + ix] + randValue, c_quantizationLevels, false);
 
             // subtract the noise after quantization if we are doing subtractive dithering
             if (subtractive)
@@ -488,6 +493,9 @@ Notes:
  * paper: https://uwspace.uwaterloo.ca/bitstream/handle/10012/3867/thesis.pdf;jsessionid=74681FAF2CA22E754C673E9A1E6957EC?sequence=1
  * also this: http://gpuopen.com/wp-content/uploads/2016/03/GdcVdrLottes.pdf#page=83
 * mention this: "GPUs round, so dither-range should be [-1;1[". not -0.5 to 1.5
+
+* subtractive dither looks darker, so i figured i'd try midtread quantization instead of midrise, to get to 1.0 values in the dithering.
+ * This was a problem though because you hit the problem of clamping at that 1.0 value, so it introduced lots of error in the bright parts
 
 * link to last blog post about noise color being independent of distribution?
 * "The error resulting from a triangularly distributed noise is independent of the signal."
