@@ -446,6 +446,8 @@ int main(int argc, char** argv)
 
 TODO:
 
+? why does triangular distributed blue noise / IGN not have error independent of signal? reread that paper and figure it out!
+
 * Compare error, maybe write text numbers on images?  Need a way to compare error between images.
 
 ? for subtractive dithering, should we include the top color? like 0/1, 1/1 instead of 0/2, 1/2?  it does seem to darken...
