@@ -322,6 +322,31 @@ void DoTests(const Image& srcImage, const char* name)
         }
     );
 
+    // uniform ign test
+    DoTest("out/%s_ign_1.png", name, srcImage, 0.0f, 1.0f, false,
+        [](size_t ix, size_t iy)
+        {
+            return std::fmodf(52.9829189f * std::fmod(0.06711056f*float(ix) + 0.00583715f*float(iy), 1.0f), 1.0f);
+        }
+    );
+
+    // triangular distributed ign test
+    DoTest("out/%s_ign_2.png", name, srcImage, -0.5f, 1.5f, false,
+        [](size_t ix, size_t iy)
+        {
+            float value = std::fmodf(52.9829189f * std::fmod(0.06711056f*float(ix) + 0.00583715f*float(iy), 1.0f), 1.0f);
+            return ReshapeUniformToTriangle(value);
+        }
+    );
+
+    // subtractive dither uniform ign test
+    DoTest("out/%s_ign_1_subtractive.png", name, srcImage, 0.0f, 1.0f, true,
+        [](size_t ix, size_t iy)
+        {
+            return std::fmodf(52.9829189f * std::fmod(0.06711056f*float(ix) + 0.00583715f*float(iy), 1.0f), 1.0f);
+        }
+    );
+
     // blue noise
     {
         int w, h, c;
@@ -416,9 +441,12 @@ int main(int argc, char** argv)
 
 TODO:
 
-? for subtractive dithering, should we include the top color? like 0/1, 1/1 instead of 0/2, 1/2?
+* Compare error, maybe write text numbers on images?  Need a way to compare error between images.
+
+? for subtractive dithering, should we include the top color? like 0/1, 1/1 instead of 0/2, 1/2?  it does seem to darken...
 
 ? subtractive dither with blue noise doesn't look input signal independent. That's a bummer.
+ * same for subtractive dither with IGN.
 
 * maybe show mean and variance (first 2 moments?)
 
@@ -430,7 +458,7 @@ TODO:
  * i think it's the fixed kernel kind, not the error relaxation kind
 
 ? should we look at this stuff animating over time?
-
+ * maybe leave it as a future todo, or link to post and say if folks try it to share results?
 
 Blog:
 * show abs error vs normalized error.  Normalized error shows the actual error pattern, regardless of signal.
