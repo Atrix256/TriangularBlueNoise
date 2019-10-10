@@ -446,6 +446,14 @@ int main(int argc, char** argv)
 
 TODO:
 
+* Maybe show non normalized error.
+ * Something that makes it be 0 to 1 at max but 0.5 is 0, and error goes up and down from there? Maybe drop the low end to zero. Maybe scale all noises by the aame
+
+* calculate error and standard deviation
+
+* Try doing ceiling instead of floor for subtractive dither see if that results in less air it seems like it should fight the darkening
+ * it should, but does it hurt or help error?
+
 ? why does triangular distributed blue noise / IGN not have error independent of signal? reread that paper and figure it out!
 
 * Compare error, maybe write text numbers on images?  Need a way to compare error between images.
@@ -467,7 +475,16 @@ TODO:
 ? should we look at this stuff animating over time?
  * maybe leave it as a future todo, or link to post and say if folks try it to share results?
 
+
+
 Blog:
+
+* old style dithering: http://www.tannerhelland.com/4660/dithering-eleven-algorithms-source-code/
+
+* title: Better dithering. "most folks know dithering as". maybe start with none / round, then white noise dither then blue noise and so on.
+
+* Talk about aubtractive dither needing to controlboth sides. Wr cant do for swap chain. We could if driver / gpu got in on it and offered a noise function for this or special type of render target
+
 * show abs error vs normalized error.  Normalized error shows the actual error pattern, regardless of signal.
 "HINDSIGHT: this shows the absolute value of the error, abs(err), which makes it hard
 to see that positive/negative errors “cancel each out” in the noisy areas. Remapping
