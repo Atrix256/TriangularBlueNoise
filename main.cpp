@@ -154,15 +154,18 @@ Image LinearTosRGB(const Image& image)
 // midtread has zero in the middle of a quantization step. Midrise has zero on the edge between two quantization steps.
 // If doing 2 steps of quantizations of [0,1), midtread has values of: 0/2, 1/2, 2/2
 // Midrise has values of 0/2, 1/2
-// I thought subtractive looked too dark, so tried midtread instead of midrise, but had problems due to it hitting the cieling and clamping. More error in bright sections.
+// I thought subtractive looked too dark, so tried midtread instead of midrise, but had problems due to it hitting the ceiling and clamping. More error in bright sections.
 // page of https://uwspace.uwaterloo.ca/bitstream/handle/10012/3867/thesis.pdf;jsessionid=74681FAF2CA22E754C673E9A1E6957EC?sequence=1
-float Quantize(float value, size_t quantizationLevels, bool midtread)
+float Quantize(float value, size_t quantizationLevels, bool midtread, bool dofloor)
 {
-    return Clamp(floor(value * float(quantizationLevels) + (midtread ? 0.5f : 0.0f)) / float(quantizationLevels), 0.0f, 1.0f);
+    if (!dofloor)
+        return Clamp(ceil(value * float(quantizationLevels) + (midtread ? 0.5f : 0.0f)) / float(quantizationLevels), 0.0f, 1.0f);
+    else
+        return Clamp(floor(value * float(quantizationLevels) + (midtread ? 0.5f : 0.0f)) / float(quantizationLevels), 0.0f, 1.0f);
 }
 
 template <typename LAMBDA>
-void DoTest(const char* baseFileName, const char* name, const Image& srcImage, float randMin, float randMax, bool subtractive, const LAMBDA& lambda)
+void DoTest(const char* baseFileName, const char* name, const Image& srcImage, float randMin, float randMax, bool subtractive, bool dofloor, const LAMBDA& lambda)
 {
     char fileName[256];
     sprintf(fileName, baseFileName, name);
@@ -184,7 +187,7 @@ void DoTest(const char* baseFileName, const char* name, const Image& srcImage, f
             // dither and quantize
             float randValueRaw = lambda(ix, iy);
             float randValue = randValueRaw / float(c_quantizationLevels);
-            float ditheredValue = Quantize(srcImage.pixels[iy*srcImage.width + ix] + randValue, c_quantizationLevels, false);
+            float ditheredValue = Quantize(srcImage.pixels[iy*srcImage.width + ix] + randValue, c_quantizationLevels, false, dofloor);
 
             // subtract the noise after quantization if we are doing subtractive dithering
             if (subtractive)
@@ -270,13 +273,13 @@ float ReshapeUniformToTriangle(float rnd)
 void DoTests(const Image& srcImage, const char* name)
 {
     // naked quantization tests
-    DoTest("out/%s_none.png", name, srcImage, 0.0f, 1.0f, false,
+    DoTest("out/%s_none.png", name, srcImage, 0.0f, 1.0f, false, true,
         [](size_t ix, size_t iy)
         {
             return 0.0f;
         }
     );
-    DoTest("out/%s_round.png", name, srcImage, 0.0f, 1.0f, false,
+    DoTest("out/%s_round.png", name, srcImage, 0.0f, 1.0f, false, true,
         [](size_t ix, size_t iy)
         {
             return 0.5f;
@@ -284,7 +287,7 @@ void DoTests(const Image& srcImage, const char* name)
     );
 
     // uniform white noise test
-    DoTest("out/%s_white_1.png", name, srcImage, 0.0f, 1.0f, false,
+    DoTest("out/%s_white_1.png", name, srcImage, 0.0f, 1.0f, false, true,
         [] (size_t ix, size_t iy)
         {
             static std::mt19937 rng(GetRNGSeed());
@@ -294,7 +297,7 @@ void DoTests(const Image& srcImage, const char* name)
     );
 
     // triangular white noise test, made by combining two white noise values
-    DoTest("out/%s_white_2.png", name, srcImage, -0.5f, 1.5f, false,
+    DoTest("out/%s_white_2.png", name, srcImage, -0.5f, 1.5f, false, true,
         [] (size_t ix, size_t iy)
         {
             static std::mt19937 rng(GetRNGSeed());
@@ -304,7 +307,7 @@ void DoTests(const Image& srcImage, const char* name)
     );
 
     // triangular white noise test, made by reshaping a single white noise value
-    DoTest("out/%s_white_2_reshape.png", name, srcImage, -0.5f, 1.5f, false,
+    DoTest("out/%s_white_2_reshape.png", name, srcImage, -0.5f, 1.5f, false, true,
         [] (size_t ix, size_t iy)
         {
             static std::mt19937 rng(GetRNGSeed());
@@ -314,7 +317,7 @@ void DoTests(const Image& srcImage, const char* name)
     );
 
     // gaussian-ish white noise test, made by combining 4 white noise values
-    DoTest("out/%s_white_4.png", name, srcImage, -1.5f, 2.5f, false,
+    DoTest("out/%s_white_4.png", name, srcImage, -1.5f, 2.5f, false, true,
         [] (size_t ix, size_t iy)
         {
             static std::mt19937 rng(GetRNGSeed());
@@ -324,7 +327,7 @@ void DoTests(const Image& srcImage, const char* name)
     );
 
     // gaussian-ish white noise test, made by combining 8 white noise values
-    DoTest("out/%s_white_8.png", name, srcImage, -3.5f, 4.5f, false,
+    DoTest("out/%s_white_8.png", name, srcImage, -3.5f, 4.5f, false, true,
         [] (size_t ix, size_t iy)
         {
             static std::mt19937 rng(GetRNGSeed());
@@ -334,7 +337,7 @@ void DoTests(const Image& srcImage, const char* name)
     );
 
     // gaussian-ish white noise test, made by combining 16 white noise values
-    DoTest("out/%s_white_16.png", name, srcImage, -7.5f, 8.5f, false,
+    DoTest("out/%s_white_16.png", name, srcImage, -7.5f, 8.5f, false, true,
         [](size_t ix, size_t iy)
         {
             static std::mt19937 rng(GetRNGSeed());
@@ -346,7 +349,17 @@ void DoTests(const Image& srcImage, const char* name)
     );
 
     // subtractive dithering uniform white noise test
-    DoTest("out/%s_white_1_subtractive.png", name, srcImage, 0.0f, 1.0f, true,
+    DoTest("out/%s_white_1_subtractive.png", name, srcImage, 0.0f, 1.0f, true, true,
+        [] (size_t ix, size_t iy)
+        {
+            static std::mt19937 rng(GetRNGSeed());
+            static std::uniform_real_distribution<float> dist;
+            return dist(rng);
+        }
+    );
+
+    // subtractive dithering uniform white noise test with ceil in quantization instead of floor
+    DoTest("out/%s_white_1_subtractive_ceil.png", name, srcImage, 0.0f, 1.0f, true, false,
         [] (size_t ix, size_t iy)
         {
             static std::mt19937 rng(GetRNGSeed());
@@ -356,7 +369,7 @@ void DoTests(const Image& srcImage, const char* name)
     );
 
     // uniform ign test
-    DoTest("out/%s_ign_1.png", name, srcImage, 0.0f, 1.0f, false,
+    DoTest("out/%s_ign_1.png", name, srcImage, 0.0f, 1.0f, false, true,
         [](size_t ix, size_t iy)
         {
             return std::fmodf(52.9829189f * std::fmod(0.06711056f*float(ix) + 0.00583715f*float(iy), 1.0f), 1.0f);
@@ -364,7 +377,7 @@ void DoTests(const Image& srcImage, const char* name)
     );
 
     // triangular distributed ign test
-    DoTest("out/%s_ign_2.png", name, srcImage, -0.5f, 1.5f, false,
+    DoTest("out/%s_ign_2.png", name, srcImage, -0.5f, 1.5f, false, true,
         [](size_t ix, size_t iy)
         {
             float value = std::fmodf(52.9829189f * std::fmod(0.06711056f*float(ix) + 0.00583715f*float(iy), 1.0f), 1.0f);
@@ -373,7 +386,15 @@ void DoTests(const Image& srcImage, const char* name)
     );
 
     // subtractive dither uniform ign test
-    DoTest("out/%s_ign_1_subtractive.png", name, srcImage, 0.0f, 1.0f, true,
+    DoTest("out/%s_ign_1_subtractive.png", name, srcImage, 0.0f, 1.0f, true, true,
+        [](size_t ix, size_t iy)
+        {
+            return std::fmodf(52.9829189f * std::fmod(0.06711056f*float(ix) + 0.00583715f*float(iy), 1.0f), 1.0f);
+        }
+    );
+
+    // subtractive dither uniform ign test using ceil instead of floor during quantization
+    DoTest("out/%s_ign_1_subtractive_ceil.png", name, srcImage, 0.0f, 1.0f, true, false,
         [](size_t ix, size_t iy)
         {
             return std::fmodf(52.9829189f * std::fmod(0.06711056f*float(ix) + 0.00583715f*float(iy), 1.0f), 1.0f);
@@ -387,7 +408,7 @@ void DoTests(const Image& srcImage, const char* name)
         uint8* bnb = stbi_load("BlueNoise64_B.png", &w, &h, &c, 4);
 
         // uniform blue noise test
-        DoTest("out/%s_blue_1.png", name, srcImage, 0.0f, 1.0f, false,
+        DoTest("out/%s_blue_1.png", name, srcImage, 0.0f, 1.0f, false, true,
             [=] (size_t ix, size_t iy)
             {
                 ix = ix % w;
@@ -397,7 +418,7 @@ void DoTests(const Image& srcImage, const char* name)
         );
 
         // triangular blue noise test, made by combining two blue noise values
-        DoTest("out/%s_blue_2.png", name, srcImage, -0.5f, 1.5f, false,
+        DoTest("out/%s_blue_2.png", name, srcImage, -0.5f, 1.5f, false, true,
             [=] (size_t ix, size_t iy)
             {
                 ix = ix % w;
@@ -409,7 +430,7 @@ void DoTests(const Image& srcImage, const char* name)
         );
 
         // triangular blue noise test, made by reshaping a single blue noise value
-        DoTest("out/%s_blue_2_reshape.png", name, srcImage, -0.5f, 1.5f, false,
+        DoTest("out/%s_blue_2_reshape.png", name, srcImage, -0.5f, 1.5f, false, true,
             [=](size_t ix, size_t iy)
             {
                 ix = ix % w;
@@ -420,7 +441,17 @@ void DoTests(const Image& srcImage, const char* name)
         );
 
         // subtractive dithering uniform blue noise test
-        DoTest("out/%s_blue_1_subtractive.png", name, srcImage, 0.0f, 1.0f, true,
+        DoTest("out/%s_blue_1_subtractive.png", name, srcImage, 0.0f, 1.0f, true, true,
+            [=] (size_t ix, size_t iy)
+            {
+                ix = ix % w;
+                iy = iy % h;
+                return float(bna[(iy*w + ix) * 4]) / 255.0f;
+            }
+        );
+
+        // subtractive dithering uniform blue noise test with ceil in quantization instead of floor
+        DoTest("out/%s_blue_1_subtractive_ceil.png", name, srcImage, 0.0f, 1.0f, true, false,
             [=] (size_t ix, size_t iy)
             {
                 ix = ix % w;
@@ -479,15 +510,18 @@ int main(int argc, char** argv)
 
 TODO:
 
+* Try doing ceiling instead of floor for subtractive dither see if that results in less air it seems like it should fight the darkening
+ * it should, but does it hurt or help error?
+ * it looks wrong. figure out why it's wrong.
+ * remove the ceil test after you figure it out and put info in the notes
+
 * subtractive seems to be showing high error but low variance.
  * maybe doing ceil for subtractive during quantization would be helpful?
  * shouldn't subtractive error be consistently low? (negative)?
+ * reread that paper to figure out this and also why blue noise may not survive well
 
 * Maybe show non normalized error visually
  * Something that makes it be 0 to 1 at max but 0.5 is 0, and error goes up and down from there? Maybe drop the low end to zero. Maybe scale all noises by the aame
-
-* Try doing ceiling instead of floor for subtractive dither see if that results in less air it seems like it should fight the darkening
- * it should, but does it hurt or help error?
 
 ? why does triangular distributed blue noise / IGN not have error independent of signal? reread that paper and figure it out!
 
