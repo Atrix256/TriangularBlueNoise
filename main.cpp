@@ -23,6 +23,8 @@ static const size_t c_quantizationLevels = 6;
 
 
 
+FILE* g_errorFile = nullptr;
+
 struct Image
 {
     Image()
@@ -61,6 +63,11 @@ T Clamp(T value, T min, T max)
         return max;
     else
         return value;
+}
+
+float Lerp(float A, float B, float t)
+{
+    return A * (1.0f - t) + B * t;
 }
 
 template <typename T>
@@ -201,6 +208,27 @@ void DoTest(const char* baseFileName, const char* name, const Image& srcImage, f
             noise.pixels[iy*srcImage.width + ix] = randValueHistogram;
         }
     }
+
+    // calculate the mean of the error
+    float mean = 0.0f;
+    for (size_t index = 0; index < gradientNormalizedError.pixels.size(); ++index)
+    {
+        float error = gradientNormalizedError.pixels[index] / float(c_quantizationLevels);
+        mean = Lerp(mean, error, 1.0f / float(index + 1));
+    }
+
+    // calculate the std dev of the error
+    float variance = 0.0f;
+    for (size_t index = 0; index < gradientNormalizedError.pixels.size(); ++index)
+    {
+        float error = gradientNormalizedError.pixels[index] / float(c_quantizationLevels);
+        float relativeError = error - mean;
+        variance = Lerp(variance, relativeError*relativeError, 1.0f / float(index+1));
+    }
+    float stdDev = sqrt(variance);
+
+    // write the mean and stddev
+    fprintf(g_errorFile, "\"%s\",\"%f\",\"%f\",\n", fileName, mean, stdDev);
 
     // normalize the error
     for (float& f : gradientNormalizedError.pixels)
@@ -408,6 +436,9 @@ void DoTests(const Image& srcImage, const char* name)
 
 int main(int argc, char** argv)
 {
+    g_errorFile = fopen("out/error.csv", "w+t");
+    fprintf(g_errorFile, "\"Name\",\"Error Mean\",\"Error StdDev\",\n");
+
     // do tests on a gradient
     {
         Image gradient(c_gradientWidth, c_gradientHeight);
@@ -438,6 +469,8 @@ int main(int argc, char** argv)
         stbi_image_free(sceneryImg);
     }
 
+    fclose(g_errorFile);
+
     return 0;
 }
 
@@ -446,10 +479,12 @@ int main(int argc, char** argv)
 
 TODO:
 
-* Maybe show non normalized error.
- * Something that makes it be 0 to 1 at max but 0.5 is 0, and error goes up and down from there? Maybe drop the low end to zero. Maybe scale all noises by the aame
+* subtractive seems to be showing high error but low variance.
+ * maybe doing ceil for subtractive during quantization would be helpful?
+ * shouldn't subtractive error be consistently low? (negative)?
 
-* calculate error and standard deviation
+* Maybe show non normalized error visually
+ * Something that makes it be 0 to 1 at max but 0.5 is 0, and error goes up and down from there? Maybe drop the low end to zero. Maybe scale all noises by the aame
 
 * Try doing ceiling instead of floor for subtractive dither see if that results in less air it seems like it should fight the darkening
  * it should, but does it hurt or help error?
@@ -478,6 +513,8 @@ TODO:
 
 
 Blog:
+
+* mean and stddev are in units of quantization step size
 
 * old style dithering: http://www.tannerhelland.com/4660/dithering-eleven-algorithms-source-code/
 
