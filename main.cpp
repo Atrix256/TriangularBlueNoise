@@ -584,6 +584,10 @@ TODO:
 
 * there are patterns in the error after you made your recent changes. why? ):
  * maybe it isn't handling negative error appropriately or maybe it's clipping?
+ * i do think it might be clipping due to quantization being wrong. i think it isn't squishing enough! (value+1)
+ * or maybe there's another reason for it clipping.
+ * maybe it's a legit problem that needs to be fixed with that lerp thing Mikkel did?
+ * maybe you need to make sure it's floored instead of being more floaty?
 
 ? are you forgetting to scale the value in subtractive dithering?
 
