@@ -446,12 +446,12 @@ void DoExpectedErrorTests()
     fprintf(file, "\"Value\",\"Mean Rise+\",\"Mean Rise-\",\"Mean Tread+\",\"Mean Tread-\",\"StdDev Rise+\",\"StdDev Rise-\",\"StdDev Tread+\",\"StdDev Tread-\"\n");
 
     // do the same test a number of times
-    for (int testIndex = 0; testIndex < 10; ++testIndex)
+    for (int testIndex = 0; testIndex < 21; ++testIndex)
     {
         // pick a random value to use as a base
         static std::mt19937 rng(GetRNGSeed());
         static std::uniform_real_distribution<float> dist;
-        float x = dist(rng);
+        float x = float(testIndex) / 20.0f;
 
         // do dithering and quantizing for a bunch of samples
         std::vector<float> randomValues;
@@ -588,6 +588,8 @@ TODO:
  * or maybe there's another reason for it clipping.
  * maybe it's a legit problem that needs to be fixed with that lerp thing Mikkel did?
  * maybe you need to make sure it's floored instead of being more floaty?
+ !! yeah. look at expected error csv. larger numbers have problems. Dunno what to do about it though.
+  * only a problem with midrise not midtread?
 
 ? are you forgetting to scale the value in subtractive dithering?
 
