@@ -19,7 +19,7 @@ typedef uint32_t uint32;
 static const size_t c_gradientWidth = 512;
 static const size_t c_gradientHeight = 64;
 
-static const size_t c_quantizationLevels = 6;
+static const size_t c_quantizationLevels = 8;
 
 
 
@@ -152,20 +152,22 @@ Image LinearTosRGB(const Image& image)
 }
 
 // midtread has zero in the middle of a quantization step. Midrise has zero on the edge between two quantization steps.
-// If doing 2 steps of quantizations of [0,1), midtread has values of: 0/2, 1/2, 2/2
-// Midrise has values of 0/2, 1/2
-// I thought subtractive looked too dark, so tried midtread instead of midrise, but had problems due to it hitting the ceiling and clamping. More error in bright sections.
-// page of https://uwspace.uwaterloo.ca/bitstream/handle/10012/3867/thesis.pdf;jsessionid=74681FAF2CA22E754C673E9A1E6957EC?sequence=1
-float Quantize(float value, size_t quantizationLevels, bool midtread, bool dofloor)
+// more info: https://uwspace.uwaterloo.ca/bitstream/handle/10012/3867/thesis.pdf
+float Quantize(float value, size_t quantizationLevels, bool midtread)
 {
-    if (!dofloor)
-        return Clamp(ceil(value * float(quantizationLevels) + (midtread ? 0.5f : 0.0f)) / float(quantizationLevels), 0.0f, 1.0f);
+    float delta = 1.0f / float(quantizationLevels);
+    if (midtread)
+    {
+        return Clamp(delta * floor(value / delta + 0.5f), 0.0f, 1.0f);
+    }
     else
-        return Clamp(floor(value * float(quantizationLevels) + (midtread ? 0.5f : 0.0f)) / float(quantizationLevels), 0.0f, 1.0f);
+    {
+        return Clamp(delta * floor(value / delta) + delta / 2.0f, 0.0f, 1.0f);
+    }
 }
 
 template <typename LAMBDA>
-void DoTest(const char* baseFileName, const char* name, const Image& srcImage, float randMin, float randMax, bool subtractive, bool dofloor, const LAMBDA& lambda)
+void DoTest(const char* baseFileName, const char* name, const Image& srcImage, float randMin, float randMax, bool subtractive, const LAMBDA& lambda)
 {
     char fileName[256];
     sprintf(fileName, baseFileName, name);
@@ -187,7 +189,7 @@ void DoTest(const char* baseFileName, const char* name, const Image& srcImage, f
             // dither and quantize
             float randValueRaw = lambda(ix, iy);
             float randValue = randValueRaw / float(c_quantizationLevels);
-            float ditheredValue = Quantize(srcImage.pixels[iy*srcImage.width + ix] + randValue, c_quantizationLevels, false, dofloor);
+            float ditheredValue = Quantize(srcImage.pixels[iy*srcImage.width + ix] + randValue, c_quantizationLevels, true);
 
             // subtract the noise after quantization if we are doing subtractive dithering
             if (subtractive)
@@ -196,7 +198,7 @@ void DoTest(const char* baseFileName, const char* name, const Image& srcImage, f
             gradientDithered.pixels[iy*srcImage.width + ix] = ditheredValue;
 
             // error image
-            float error = srcImage.pixels[iy*srcImage.width + ix] - ditheredValue;
+            float error = ditheredValue - srcImage.pixels[iy*srcImage.width + ix];
             gradientAbsError.pixels[iy*srcImage.width + ix] = std::abs(error);
             gradientNormalizedError.pixels[iy*srcImage.width + ix] = error;
             errorMin = std::min(errorMin, error);
@@ -273,13 +275,13 @@ float ReshapeUniformToTriangle(float rnd)
 void DoTests(const Image& srcImage, const char* name)
 {
     // naked quantization tests
-    DoTest("out/%s_none.png", name, srcImage, 0.0f, 1.0f, false, true,
+    DoTest("out/%s_none.png", name, srcImage, 0.0f, 1.0f, false,
         [](size_t ix, size_t iy)
         {
             return 0.0f;
         }
     );
-    DoTest("out/%s_round.png", name, srcImage, 0.0f, 1.0f, false, true,
+    DoTest("out/%s_round.png", name, srcImage, 0.0f, 1.0f, false,
         [](size_t ix, size_t iy)
         {
             return 0.5f;
@@ -287,7 +289,7 @@ void DoTests(const Image& srcImage, const char* name)
     );
 
     // uniform white noise test
-    DoTest("out/%s_white_1.png", name, srcImage, 0.0f, 1.0f, false, true,
+    DoTest("out/%s_white_1.png", name, srcImage, 0.0f, 1.0f, false,
         [] (size_t ix, size_t iy)
         {
             static std::mt19937 rng(GetRNGSeed());
@@ -297,7 +299,7 @@ void DoTests(const Image& srcImage, const char* name)
     );
 
     // triangular white noise test, made by combining two white noise values
-    DoTest("out/%s_white_2.png", name, srcImage, -0.5f, 1.5f, false, true,
+    DoTest("out/%s_white_2.png", name, srcImage, -0.5f, 1.5f, false,
         [] (size_t ix, size_t iy)
         {
             static std::mt19937 rng(GetRNGSeed());
@@ -307,7 +309,7 @@ void DoTests(const Image& srcImage, const char* name)
     );
 
     // triangular white noise test, made by reshaping a single white noise value
-    DoTest("out/%s_white_2_reshape.png", name, srcImage, -0.5f, 1.5f, false, true,
+    DoTest("out/%s_white_2_reshape.png", name, srcImage, -0.5f, 1.5f, false,
         [] (size_t ix, size_t iy)
         {
             static std::mt19937 rng(GetRNGSeed());
@@ -317,7 +319,7 @@ void DoTests(const Image& srcImage, const char* name)
     );
 
     // gaussian-ish white noise test, made by combining 4 white noise values
-    DoTest("out/%s_white_4.png", name, srcImage, -1.5f, 2.5f, false, true,
+    DoTest("out/%s_white_4.png", name, srcImage, -1.5f, 2.5f, false,
         [] (size_t ix, size_t iy)
         {
             static std::mt19937 rng(GetRNGSeed());
@@ -327,7 +329,7 @@ void DoTests(const Image& srcImage, const char* name)
     );
 
     // gaussian-ish white noise test, made by combining 8 white noise values
-    DoTest("out/%s_white_8.png", name, srcImage, -3.5f, 4.5f, false, true,
+    DoTest("out/%s_white_8.png", name, srcImage, -3.5f, 4.5f, false,
         [] (size_t ix, size_t iy)
         {
             static std::mt19937 rng(GetRNGSeed());
@@ -337,7 +339,7 @@ void DoTests(const Image& srcImage, const char* name)
     );
 
     // gaussian-ish white noise test, made by combining 16 white noise values
-    DoTest("out/%s_white_16.png", name, srcImage, -7.5f, 8.5f, false, true,
+    DoTest("out/%s_white_16.png", name, srcImage, -7.5f, 8.5f, false,
         [](size_t ix, size_t iy)
         {
             static std::mt19937 rng(GetRNGSeed());
@@ -349,17 +351,7 @@ void DoTests(const Image& srcImage, const char* name)
     );
 
     // subtractive dithering uniform white noise test
-    DoTest("out/%s_white_1_subtractive.png", name, srcImage, 0.0f, 1.0f, true, true,
-        [] (size_t ix, size_t iy)
-        {
-            static std::mt19937 rng(GetRNGSeed());
-            static std::uniform_real_distribution<float> dist;
-            return dist(rng);
-        }
-    );
-
-    // subtractive dithering uniform white noise test with ceil in quantization instead of floor
-    DoTest("out/%s_white_1_subtractive_ceil.png", name, srcImage, 0.0f, 1.0f, true, false,
+    DoTest("out/%s_white_1_subtractive.png", name, srcImage, 0.0f, 1.0f, true,
         [] (size_t ix, size_t iy)
         {
             static std::mt19937 rng(GetRNGSeed());
@@ -369,7 +361,7 @@ void DoTests(const Image& srcImage, const char* name)
     );
 
     // uniform ign test
-    DoTest("out/%s_ign_1.png", name, srcImage, 0.0f, 1.0f, false, true,
+    DoTest("out/%s_ign_1.png", name, srcImage, 0.0f, 1.0f, false,
         [](size_t ix, size_t iy)
         {
             return std::fmodf(52.9829189f * std::fmod(0.06711056f*float(ix) + 0.00583715f*float(iy), 1.0f), 1.0f);
@@ -377,7 +369,7 @@ void DoTests(const Image& srcImage, const char* name)
     );
 
     // triangular distributed ign test
-    DoTest("out/%s_ign_2.png", name, srcImage, -0.5f, 1.5f, false, true,
+    DoTest("out/%s_ign_2.png", name, srcImage, -0.5f, 1.5f, false,
         [](size_t ix, size_t iy)
         {
             float value = std::fmodf(52.9829189f * std::fmod(0.06711056f*float(ix) + 0.00583715f*float(iy), 1.0f), 1.0f);
@@ -386,15 +378,7 @@ void DoTests(const Image& srcImage, const char* name)
     );
 
     // subtractive dither uniform ign test
-    DoTest("out/%s_ign_1_subtractive.png", name, srcImage, 0.0f, 1.0f, true, true,
-        [](size_t ix, size_t iy)
-        {
-            return std::fmodf(52.9829189f * std::fmod(0.06711056f*float(ix) + 0.00583715f*float(iy), 1.0f), 1.0f);
-        }
-    );
-
-    // subtractive dither uniform ign test using ceil instead of floor during quantization
-    DoTest("out/%s_ign_1_subtractive_ceil.png", name, srcImage, 0.0f, 1.0f, true, false,
+    DoTest("out/%s_ign_1_subtractive.png", name, srcImage, 0.0f, 1.0f, true,
         [](size_t ix, size_t iy)
         {
             return std::fmodf(52.9829189f * std::fmod(0.06711056f*float(ix) + 0.00583715f*float(iy), 1.0f), 1.0f);
@@ -408,7 +392,7 @@ void DoTests(const Image& srcImage, const char* name)
         uint8* bnb = stbi_load("BlueNoise64_B.png", &w, &h, &c, 4);
 
         // uniform blue noise test
-        DoTest("out/%s_blue_1.png", name, srcImage, 0.0f, 1.0f, false, true,
+        DoTest("out/%s_blue_1.png", name, srcImage, 0.0f, 1.0f, false,
             [=] (size_t ix, size_t iy)
             {
                 ix = ix % w;
@@ -418,7 +402,7 @@ void DoTests(const Image& srcImage, const char* name)
         );
 
         // triangular blue noise test, made by combining two blue noise values
-        DoTest("out/%s_blue_2.png", name, srcImage, -0.5f, 1.5f, false, true,
+        DoTest("out/%s_blue_2.png", name, srcImage, -0.5f, 1.5f, false,
             [=] (size_t ix, size_t iy)
             {
                 ix = ix % w;
@@ -430,7 +414,7 @@ void DoTests(const Image& srcImage, const char* name)
         );
 
         // triangular blue noise test, made by reshaping a single blue noise value
-        DoTest("out/%s_blue_2_reshape.png", name, srcImage, -0.5f, 1.5f, false, true,
+        DoTest("out/%s_blue_2_reshape.png", name, srcImage, -0.5f, 1.5f, false,
             [=](size_t ix, size_t iy)
             {
                 ix = ix % w;
@@ -441,17 +425,7 @@ void DoTests(const Image& srcImage, const char* name)
         );
 
         // subtractive dithering uniform blue noise test
-        DoTest("out/%s_blue_1_subtractive.png", name, srcImage, 0.0f, 1.0f, true, true,
-            [=] (size_t ix, size_t iy)
-            {
-                ix = ix % w;
-                iy = iy % h;
-                return float(bna[(iy*w + ix) * 4]) / 255.0f;
-            }
-        );
-
-        // subtractive dithering uniform blue noise test with ceil in quantization instead of floor
-        DoTest("out/%s_blue_1_subtractive_ceil.png", name, srcImage, 0.0f, 1.0f, true, false,
+        DoTest("out/%s_blue_1_subtractive.png", name, srcImage, 0.0f, 1.0f, true,
             [=] (size_t ix, size_t iy)
             {
                 ix = ix % w;
@@ -465,9 +439,105 @@ void DoTests(const Image& srcImage, const char* name)
     }
 }
 
+void DoExpectedErrorTests()
+{
+    FILE* file = fopen("out/_expectederror.csv", "w+t");
+
+    fprintf(file, "\"Value\",\"Mean Rise+\",\"Mean Rise-\",\"Mean Tread+\",\"Mean Tread-\",\"StdDev Rise+\",\"StdDev Rise-\",\"StdDev Tread+\",\"StdDev Tread-\"\n");
+
+    // do the same test a number of times
+    for (int testIndex = 0; testIndex < 10; ++testIndex)
+    {
+        // pick a random value to use as a base
+        static std::mt19937 rng(GetRNGSeed());
+        static std::uniform_real_distribution<float> dist;
+        float x = dist(rng);
+
+        // do dithering and quantizing for a bunch of samples
+        std::vector<float> randomValues;
+        std::vector<float> quantizedValuesMidTread;
+        std::vector<float> quantizedValuesMidRise;
+        for (int sampleIndex = 0; sampleIndex < 100000; ++sampleIndex)
+        {
+            float randomValue = dist(rng) / float(c_quantizationLevels);
+            randomValues.push_back(randomValue);
+            quantizedValuesMidRise.push_back(Quantize(x + randomValue, c_quantizationLevels, false));
+            quantizedValuesMidTread.push_back(Quantize(x + randomValue, c_quantizationLevels, true));
+        }
+
+        // calculate error mean for rise/tread x subtractive/additive
+        float errorMeanRiseAdditive = 0.0f;
+        float errorMeanRiseSubtractive = 0.0f;
+        float errorMeanTreadAdditive = 0.0f;
+        float errorMeanTreadSubtractive = 0.0f;
+        for (size_t sampleIndex = 0; sampleIndex < randomValues.size(); ++sampleIndex)
+        {
+            {
+                float error = quantizedValuesMidRise[sampleIndex] - x;
+                errorMeanRiseAdditive = Lerp(errorMeanRiseAdditive, error, 1.0f / float(sampleIndex + 1));
+            }
+
+            {
+                float error = quantizedValuesMidRise[sampleIndex] - randomValues[sampleIndex] - x;
+                errorMeanRiseSubtractive = Lerp(errorMeanRiseSubtractive, error, 1.0f / float(sampleIndex + 1));
+            }
+
+            {
+                float error = quantizedValuesMidTread[sampleIndex] - x;
+                errorMeanTreadAdditive = Lerp(errorMeanTreadAdditive, error, 1.0f / float(sampleIndex + 1));
+            }
+
+            {
+                float error = quantizedValuesMidTread[sampleIndex] - randomValues[sampleIndex] - x;
+                errorMeanTreadSubtractive = Lerp(errorMeanTreadSubtractive, error, 1.0f / float(sampleIndex + 1));
+            }
+        }
+
+        // calculate stddev for rise/tread x subtractive/additive
+        float stdDevRiseAdditive = 0.0f;
+        float stdDevRiseSubtractive = 0.0f;
+        float stdDevTreadAdditive = 0.0f;
+        float stdDevTreadSubtractive = 0.0f;
+        for (size_t sampleIndex = 0; sampleIndex < randomValues.size(); ++sampleIndex)
+        {
+            {
+                float error = quantizedValuesMidRise[sampleIndex] - x;
+                error -= errorMeanRiseAdditive;
+                stdDevRiseAdditive = Lerp(stdDevRiseAdditive, error*error, 1.0f / float(sampleIndex + 1));
+            }
+
+            {
+                float error = quantizedValuesMidRise[sampleIndex] - randomValues[sampleIndex] - x;
+                error -= errorMeanRiseSubtractive;
+                stdDevRiseSubtractive = Lerp(stdDevRiseSubtractive, error*error, 1.0f / float(sampleIndex + 1));
+            }
+
+            {
+                float error = quantizedValuesMidTread[sampleIndex] - x;
+                error -= errorMeanTreadAdditive;
+                stdDevTreadAdditive = Lerp(stdDevTreadAdditive, error*error, 1.0f / float(sampleIndex + 1));
+            }
+
+            {
+                float error = quantizedValuesMidTread[sampleIndex] - randomValues[sampleIndex] - x;
+                error -= errorMeanTreadSubtractive;
+                stdDevTreadSubtractive = Lerp(stdDevTreadSubtractive, error*error, 1.0f / float(sampleIndex + 1));
+            }
+        }
+
+        fprintf(file, "\"%f\",", x);
+        fprintf(file, "\"%f\",\"%f\",\"%f\",\"%f\",", errorMeanRiseAdditive, errorMeanRiseSubtractive, errorMeanTreadAdditive, errorMeanTreadSubtractive);
+        fprintf(file, "\"%f\",\"%f\",\"%f\",\"%f\"\n", stdDevRiseAdditive, stdDevRiseSubtractive, stdDevTreadAdditive, stdDevTreadSubtractive);
+    }
+
+    fclose(file);
+}
+
 int main(int argc, char** argv)
 {
-    g_errorFile = fopen("out/error.csv", "w+t");
+    DoExpectedErrorTests();
+
+    g_errorFile = fopen("out/_error.csv", "w+t");
     fprintf(g_errorFile, "\"Name\",\"Error Mean\",\"Error StdDev\",\n");
 
     // do tests on a gradient
@@ -510,6 +580,19 @@ int main(int argc, char** argv)
 
 TODO:
 
+* does it matter if you do midrise or midtread?
+
+* there are patterns in the error after you made your recent changes. why? ):
+ * maybe it isn't handling negative error appropriately or maybe it's clipping?
+
+? are you forgetting to scale the value in subtractive dithering?
+
+* _error.csv labels are too long!
+
+* instead of round, show both quantization methods?
+
+* make sure you are showing quantized values correctly.  like 0/3, 1/3, 2/3 should be black, middle grey, white.
+
 * Try doing ceiling instead of floor for subtractive dither see if that results in less air it seems like it should fight the darkening
  * it should, but does it hurt or help error?
  * it looks wrong. figure out why it's wrong.
@@ -545,10 +628,13 @@ TODO:
  * maybe leave it as a future todo, or link to post and say if folks try it to share results?
 
 
+* mean and stddev are in units of quantization step size (your expected error doesn't do this. maybe cut it out).
+
 
 Blog:
 
-* mean and stddev are in units of quantization step size
+* show the graph of expected error. data is in rows not columns. the bar graph is so telling.
+ * probably show a graph of means separately from stddev
 
 * old style dithering: http://www.tannerhelland.com/4660/dithering-eleven-algorithms-source-code/
 
